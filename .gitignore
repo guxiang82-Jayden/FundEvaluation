@@ -1,0 +1,14 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 数据缓存与输出(可重新生成,不入库)
+scripts/cache/
+scripts/output/
+*.parquet
+
+# 杂项
+.DS_Store
+Thumbs.db
+~$*.xlsx

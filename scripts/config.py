@@ -1,0 +1,107 @@
+"""基金评估框架 v0.1 配置
+对应文档: 01_评估框架v0.1.md
+所有阈值与权重为先验值, 以回测校准为准 (见文档第6节)
+"""
+
+# ---------- 路径 ----------
+CACHE_DIR = "cache"
+OUTPUT_DIR = "output"
+
+# ---------- L0 同类组定义 (Wind/东财二级分类 -> 项目口径) ----------
+ACTIVE_EQUITY_TYPES = {"普通股票型", "偏股混合型", "灵活配置型"}
+EQUITY_POSITION_FLOOR = 0.60   # 灵活配置纳入主动权益组的权益中枢下限
+
+# ---------- L1 负面初筛阈值 ----------
+SCREENING = {
+    "N1_min_scale": 0.5,          # 合并规模下限(亿), 贴近清盘线
+    "N2_max_scale": 300.0,        # 规模上限(亿), 待回测校准
+    "N3_min_fund_age_years": 1.0, # 成立年限下限 (主题白名单豁免)
+    "N4_min_tenure_years": 1.0,   # 现任经理任期下限 (主题白名单豁免)
+    "N5_recent_change_months": 6, # 经理变更观察窗口(月)
+    "N6_max_inst_ratio": 0.90,    # 机构持有占比上限
+    "N7_max_style_switches": 2,   # 近2年风格切换次数上限(成立>=2年适用, 不豁免)
+    "N9_min_equity_quarters": 4,  # 连续低仓位季度数
+    "N9_equity_floor": 0.50,
+}
+
+# 主题白名单 (N3/N4 豁免; 季度复核; 来源: 五年规划新兴行业 + 市场主线)
+THEME_WHITELIST = [
+    "人工智能", "AI", "芯片", "半导体", "大模型",
+    "低空经济", "商业航天", "量子",
+]
+
+# ---------- L2 记分卡 ----------
+# 窗口合成权重
+WINDOW_WEIGHTS = {"5y": 0.6, "3y": 0.4}   # 无5y数据时只用3y并标记 low_confidence
+
+# 维度权重
+DIM_WEIGHTS = {
+    "A_return": 0.30,
+    "B_risk": 0.25,
+    "C_attribution": 0.20,
+    "D_manager": 0.15,
+    "E_operation": 0.10,
+}
+
+# 维度内指标权重 (指标键 -> (权重, 方向: 1=越大越好, -1=越小越好, 0=U型))
+INDICATORS = {
+    "A_return": {
+        "excess_return_ann": (0.40, 1),    # A1 年化超额(对基准)
+        "rank_persistence": (0.30, 1),     # A2 滚动1年同类分位中位数
+        "monthly_win_rate": (0.15, 1),     # A3 月度超额胜率
+        "tenure_excess_ann": (0.15, 1),    # A4 任期年化超额
+    },
+    "B_risk": {
+        "max_drawdown": (0.30, 1),         # B1 (取负后越大越好, 统一在计算层处理为高=好)
+        "calmar": (0.30, 1),               # B2
+        "sortino": (0.25, 1),              # B3
+        "recovery_days": (0.15, -1),       # B4 修复天数越短越好
+    },
+    "C_attribution": {
+        "selection_share": (0.35, 1),      # C1 选股贡献占比
+        "style_stability": (0.30, 1),      # C2
+        "return_gap": (0.20, 1),           # C3
+        "concentration": (0.15, 0),        # C4 U型: 适度集中为佳
+    },
+    "D_manager": {
+        "manager_experience": (0.30, 1),   # D1 经验年限(7年封顶)
+        "management_load": (0.30, -1),     # D2 管理半径(规模+产品数, 越大越差)
+        "scale_growth": (0.25, -1),        # D3 规模暴增惩罚
+        "company_platform": (0.15, 1),     # D4
+    },
+    "E_operation": {
+        "total_fee": (0.50, -1),           # E1
+        "turnover": (0.30, -1),            # E2 (量化标签豁免)
+        "holder_balance": (0.20, 1),       # E3
+    },
+}
+
+# 短板规则
+SHORTBOARD_PCTL = 20      # 任一维度分位<20 -> 降档标记
+VETO_DIM = "B_risk"       # 风险维度一票否决
+VETO_PCTL = 10
+
+# 评分预处理
+WINSORIZE = (0.01, 0.99)
+
+# ---------- L3 深研触发 ----------
+FOCUS_POOL_TOP_PCT = 0.20   # 综合分同类前20%
+
+# ---------- 数据 ----------
+TRADING_DAYS_PER_YEAR = 244   # A股年化天数
+RISK_FREE_ANNUAL = 0.015      # 无风险利率(暂用), TODO: 改为动态取数
+
+# 业绩基准解析: 指数名称 -> 行情代码 (AKShare/东财口径, 逐步补充)
+BENCHMARK_INDEX_MAP = {
+    "沪深300指数": "sh000300",
+    "中证500指数": "sh000905",
+    "中证800指数": "sh000906",
+    "上证指数": "sh000001",
+    "创业板指数": "sz399006",
+    "中证港股通综合指数": "HKD_PORTFOLIO",   # TODO: 确认代码
+    "恒生指数": "HSI",
+    "中债总指数": "CBA00101",                # TODO: 确认代码与来源
+    "中债综合指数": "CBA00201",
+    "活期存款利率": "RF_DEPOSIT",
+}
+DEFAULT_EQUITY_BENCHMARK = "sh000906"  # 基准缺失/无法解析时回退: 中证800
