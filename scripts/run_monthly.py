@@ -16,16 +16,13 @@ import screening
 import scoring
 
 
-def build_metrics_table(funds: pd.DataFrame, index_rets: dict, asof=None, limit=None) -> pd.DataFrame:
+def build_metrics_table(codes: list, index_rets: dict, bench_texts: dict, asof=None) -> pd.DataFrame:
+    """bench_texts: fund_code -> 业绩基准字符串(来自雪球基本信息), 逐基金解析合成"""
     rows = []
-    codes = funds["fund_code"].tolist()
-    if limit:
-        codes = codes[:limit]
     for i, code in enumerate(codes):
         try:
             nav = da.fund_nav(code)
-            # v0.1: 基准统一用默认(中证800); v0.2 接入逐基金基准解析
-            bench_ret, bench_note = bm.get_benchmark_returns("", index_rets)
+            bench_ret, bench_note = bm.get_benchmark_returns(bench_texts.get(code, ""), index_rets)
             m = metrics.compute_fund_metrics(nav, bench_ret, asof=asof)
             m["fund_code"] = code
             m["bench_note"] = bench_note
@@ -46,16 +43,25 @@ def main():
     print("== L0 同类组 ==")
     funds = da.active_equity_universe()
     print(f"主动权益组(粗): {len(funds)} 只")
+    codes = funds["fund_code"].tolist()
+    if args.limit:
+        codes = codes[: args.limit]
+
+    print("== 元数据(规模/成立/基准/仓位, 约0.4s/只) ==")
+    meta = da.build_meta_table(codes)
+    bench_texts = (dict(zip(meta["fund_code"], meta["benchmark_text"].fillna("")))
+                   if "benchmark_text" in meta else {})
 
     print("== 指数行情 ==")
-    index_rets = da.load_all_index_returns()
+    index_rets = da.load_all_index_returns_v2()
 
     print("== 指标计算 ==")
-    mt = build_metrics_table(funds, index_rets, asof=args.asof, limit=args.limit)
-    df = funds.merge(mt, on="fund_code", how="inner")
+    mt = build_metrics_table(codes, index_rets, bench_texts, asof=args.asof)
+    df = funds.merge(meta.drop(columns=["fund_name"], errors="ignore"),
+                     on="fund_code", how="right").merge(mt, on="fund_code", how="inner")
 
     print("== L1 初筛 ==")
-    # v0.1: 元数据接口未完成, 初筛仅跑可用规则; 完整规则待 data_akshare.fund_meta
+    # 当前可用规则: N1/N2(规模) N3(成立) + 主题豁免; N4-N8 数据源待补自动跳过
     df = screening.apply_screening(df)
     standard = df[df["channel"] == "standard"]
     print(f"标准通道: {len(standard)} | 观察: {(df['channel']=='theme_observation').sum()} | 剔除: {df['screened_out'].sum()}")

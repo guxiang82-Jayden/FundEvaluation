@@ -43,16 +43,21 @@ def fund_universe() -> pd.DataFrame:
 
 
 def active_equity_universe() -> pd.DataFrame:
-    """主动权益组: 按东财类型映射项目口径(粗筛, 灵活配置仓位中枢在 L0 细筛)"""
+    """主动权益组: 按东财类型映射项目口径(粗筛, 灵活配置仓位中枢在 L0 细筛)
+    实测类型字符串(2026-06): '混合型-偏股' '混合型-灵活' '股票型' '债券型-混合二级' 等"""
     df = fund_universe()
-    mask = df["fund_type"].str.contains("股票型|偏股混合|灵活配置", na=False, regex=True)
-    mask &= ~df["fund_type"].str.contains("指数|QDII|FOF", na=False, regex=True)
+    mask = df["fund_type"].str.contains("混合型-偏股|混合型-灵活|股票型", na=False, regex=True)
+    mask &= ~df["fund_type"].str.contains("指数|QDII|FOF|债券|货币|理财|联接", na=False, regex=True)
+    # 后端收费份额剔除(简称含"后端"), C类等多份额在 L0 合并
+    mask &= ~df["fund_name"].str.contains("后端", na=False)
     return df[mask].reset_index(drop=True)
 
 
 # ---------- 净值 ----------
 def fund_nav(fund_code: str) -> pd.Series:
-    """单基金累计净值序列(复权). TODO: 核对 AKShare 字段(累计净值 vs 复权净值)"""
+    """单基金累计净值序列(已实测: 列名 净值日期/累计净值)
+    ⚠️ 已知近似: 累计净值为分红简单加回, 非分红再投资复权; 对高分红基金收益略低估
+    TODO v0.2: 用 单位净值+分红送配详情 自建复权净值"""
     def fetch():
         df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="累计净值走势")
         df = df.rename(columns={"净值日期": "date", "累计净值": "nav"})
@@ -64,14 +69,37 @@ def fund_nav(fund_code: str) -> pd.Series:
 
 # ---------- 指数行情(基准合成用) ----------
 def index_returns(code: str) -> pd.Series:
-    """指数日收益. TODO: 债券指数/港股通指数来源待补"""
+    """指数日收益. 股票指数(sh/sz前缀)走新浪; 中债指数(CBA前缀)走中债综合指数
+    港股通综指暂无源, 基准含其成分时按剩余权重归一(benchmark.resolve_components 已处理)"""
     def fetch():
-        df = ak.stock_zh_index_daily(symbol=code)
+        if code.startswith("CBA"):
+            try:
+                df = ak.bond_new_composite_index_cbond(indicator="财富", period="总值")
+            except Exception:
+                df = ak.bond_composite_index_cbond(indicator="财富", period="总值")
+            df = df.rename(columns={"value": "close"})
+        else:
+            df = ak.stock_zh_index_daily(symbol=code)
         df["date"] = pd.to_datetime(df["date"])
         return df[["date", "close"]]
     df = cached(f"index_{code}", fetch, max_age_days=1)
     s = df.set_index("date")["close"].astype(float).sort_index()
     return s.pct_change().dropna()
+
+
+def load_all_index_returns_v2() -> dict:
+    """股票指数 + 中债指数(实测可用) + RBSA 风格基(巨潮)"""
+    import rbsa as _rbsa
+    out = {}
+    codes = {c for c in config.BENCHMARK_INDEX_MAP.values() if c.startswith(("sh", "sz", "CBA"))}
+    codes |= {config.DEFAULT_EQUITY_BENCHMARK}
+    codes |= set(_rbsa.DEFAULT_STYLE_BASIS.values())
+    for code in sorted(codes):
+        try:
+            out[code] = index_returns(code)
+        except Exception as e:  # noqa: BLE001
+            print(f"[warn] index {code} failed: {e}")
+    return out
 
 
 def load_all_index_returns() -> dict:
@@ -92,45 +120,41 @@ def fund_meta(fund_code: str) -> dict:
     ⚠️ 接口名/字段名基于 AKShare 1.18 文档, 首次实跑时核对"""
     meta = {"fund_code": fund_code}
 
-    # 1) 雪球基本信息: 成立时间/最新规模/基金经理
+    # 1) 雪球基本信息(实测可用): 成立时间/最新规模/经理名单/业绩比较基准 ★
     try:
         info = ak.fund_individual_basic_info_xq(symbol=fund_code)
         kv = dict(zip(info["item"], info["value"]))
         setup = pd.to_datetime(kv.get("成立时间"), errors="coerce")
         if pd.notna(setup):
             meta["fund_age_years"] = (pd.Timestamp.now() - setup).days / 365.25
-        scale_text = str(kv.get("最新规模", ""))
-        meta["scale_yi"] = _parse_scale_yi(scale_text)
+        meta["scale_yi"] = _parse_scale_yi(str(kv.get("最新规模", "")))
         meta["fund_name"] = kv.get("基金名称")
+        meta["benchmark_text"] = kv.get("业绩比较基准")  # 供 benchmark.py 逐基金解析
+        meta["fund_company"] = kv.get("基金公司")
     except Exception as e:  # noqa: BLE001
         print(f"[warn] {fund_code} basic_info 失败: {e}")
 
-    # 2) 经理任期: 东财基金经理变动一览
+    # 2) 经理(实测: fund_manager_em 有'现任基金代码'列, 但无单基金任职起始日)
+    # ⚠️ N4/N5 所需"任期"两个源均拿不到, 待补: 候选 ak.fund_manager_change_em /
+    #    天天基金单基金经理页; 会话内可用且慢 MCP periodYears 交叉补充
     try:
-        mgr = ak.fund_announcement_personnel_em(symbol=fund_code)
-        # TODO: 核对该接口字段; 备选 ak.fund_manager_em() 全量表按基金过滤
-        meta["_manager_raw"] = mgr.to_dict("records")[:5]
-    except Exception:
-        try:
-            allm = cached("manager_all", lambda: ak.fund_manager_em(), max_age_days=7)
-            mine = allm[allm["现任基金"].astype(str).str.contains(fund_code, na=False)]
-            if not mine.empty:
-                meta["manager_names"] = mine["姓名"].tolist()
-        except Exception as e:  # noqa: BLE001
-            print(f"[warn] {fund_code} manager 失败: {e}")
+        allm = cached("manager_all", lambda: ak.fund_manager_em(), max_age_days=7)
+        mine = allm[allm["现任基金代码"].astype(str) == fund_code]
+        if not mine.empty:
+            meta["manager_names"] = mine["姓名"].tolist()
+            meta["manager_career_days"] = mine["累计从业时间"].max()  # 总从业, 非本基金任期
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] {fund_code} manager 失败: {e}")
 
-    # 3) 持有人结构(年报/半年报口径)
+    # 3) 资产配置(实测: fund_individual_detail_hold_xq 返回 资产类型/仓位占比)
+    #    用于 N9 仓位规则与灵活配置型的权益中枢判断; 持有人结构(N6)另找源
     try:
         hold = ak.fund_individual_detail_hold_xq(symbol=fund_code)
-        # 期望列: 机构持有比例/个人持有比例; 取最新一期
-        if not hold.empty:
-            latest = hold.iloc[-1]
-            for col in hold.columns:
-                if "机构" in str(col):
-                    meta["inst_ratio"] = float(latest[col]) / 100.0
-                    break
+        kv = dict(zip(hold.iloc[:, 0], hold.iloc[:, 1]))
+        if "股票" in kv:
+            meta["equity_position"] = float(kv["股票"]) / 100.0
     except Exception as e:  # noqa: BLE001
-        print(f"[warn] {fund_code} holders 失败: {e}")
+        print(f"[warn] {fund_code} 资产配置 失败: {e}")
 
     return meta
 
