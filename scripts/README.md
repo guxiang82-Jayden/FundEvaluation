@@ -20,11 +20,14 @@ test_engine.py   合成数据测试(已通过 2026-06-11)
 ## 运行
 
 ```bash
-pip install akshare pandas pyarrow openpyxl
+pip install akshare pandas pyarrow openpyxl scipy
 python test_engine.py                 # 合成数据自检
+python test_modules.py                # RBSA/回测模块自检
 python run_monthly.py --limit 50      # 小样本试跑
 python run_monthly.py                 # 全量(主动权益组)
 ```
+
+scipy 可选:无 scipy 时 RBSA 自动退化为 numpy FISTA 实现(已测,结果一致)。
 
 ## v0.1 已知未完成(按优先级)
 

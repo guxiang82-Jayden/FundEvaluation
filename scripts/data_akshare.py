@@ -87,6 +87,83 @@ def load_all_index_returns() -> dict:
 
 # ---------- 元数据(初筛用) ----------
 def fund_meta(fund_code: str) -> dict:
-    """规模/成立日/经理任期等. TODO: 拼接 ak.fund_individual_basic_info_xq /
-    fund_manager_em / 持有人结构接口; 字段名首跑核对"""
-    raise NotImplementedError("v0.1: 待首次实跑时实现并核对字段")
+    """单基金初筛元数据. 多源拼接, 任一源失败该字段记 None 并继续
+    返回键与 screening.py 必需列对齐
+    ⚠️ 接口名/字段名基于 AKShare 1.18 文档, 首次实跑时核对"""
+    meta = {"fund_code": fund_code}
+
+    # 1) 雪球基本信息: 成立时间/最新规模/基金经理
+    try:
+        info = ak.fund_individual_basic_info_xq(symbol=fund_code)
+        kv = dict(zip(info["item"], info["value"]))
+        setup = pd.to_datetime(kv.get("成立时间"), errors="coerce")
+        if pd.notna(setup):
+            meta["fund_age_years"] = (pd.Timestamp.now() - setup).days / 365.25
+        scale_text = str(kv.get("最新规模", ""))
+        meta["scale_yi"] = _parse_scale_yi(scale_text)
+        meta["fund_name"] = kv.get("基金名称")
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] {fund_code} basic_info 失败: {e}")
+
+    # 2) 经理任期: 东财基金经理变动一览
+    try:
+        mgr = ak.fund_announcement_personnel_em(symbol=fund_code)
+        # TODO: 核对该接口字段; 备选 ak.fund_manager_em() 全量表按基金过滤
+        meta["_manager_raw"] = mgr.to_dict("records")[:5]
+    except Exception:
+        try:
+            allm = cached("manager_all", lambda: ak.fund_manager_em(), max_age_days=7)
+            mine = allm[allm["现任基金"].astype(str).str.contains(fund_code, na=False)]
+            if not mine.empty:
+                meta["manager_names"] = mine["姓名"].tolist()
+        except Exception as e:  # noqa: BLE001
+            print(f"[warn] {fund_code} manager 失败: {e}")
+
+    # 3) 持有人结构(年报/半年报口径)
+    try:
+        hold = ak.fund_individual_detail_hold_xq(symbol=fund_code)
+        # 期望列: 机构持有比例/个人持有比例; 取最新一期
+        if not hold.empty:
+            latest = hold.iloc[-1]
+            for col in hold.columns:
+                if "机构" in str(col):
+                    meta["inst_ratio"] = float(latest[col]) / 100.0
+                    break
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] {fund_code} holders 失败: {e}")
+
+    return meta
+
+
+def _parse_scale_yi(text: str) -> float | None:
+    """'267.93亿' / '5000万' -> 亿元"""
+    import re
+    m = re.search(r"([\d.]+)\s*(亿|万)?", text)
+    if not m:
+        return None
+    v = float(m.group(1))
+    unit = m.group(2)
+    if unit == "万":
+        return v / 10000
+    return v
+
+
+def build_meta_table(fund_codes: list[str]) -> pd.DataFrame:
+    """批量元数据表(供 screening). 注意接口限频, 必要时加 sleep"""
+    import time
+    rows = []
+    for i, code in enumerate(fund_codes):
+        rows.append(fund_meta(code))
+        time.sleep(0.3)  # 雪球/东财限频保护
+        if (i + 1) % 50 == 0:
+            print(f"  meta {i+1}/{len(fund_codes)}")
+    df = pd.DataFrame(rows)
+    # screening 需要但本层暂无法提供的列, 补默认值(规则自动跳过)
+    for col, default in [("tenure_years", None), ("manager_changed_recent", None),
+                          ("style_switches_2y", None), ("equity_low_quarters", None),
+                          ("negative_record", None)]:
+        if col not in df:
+            df[col] = default
+    if "fund_age_years" in df:
+        df["fund_age_for_style"] = df["fund_age_years"]
+    return df
