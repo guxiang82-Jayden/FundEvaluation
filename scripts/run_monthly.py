@@ -71,6 +71,9 @@ def main():
 
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     out_path = os.path.join(config.OUTPUT_DIR, f"score_active_equity_{args.asof or date.today().isoformat()}.xlsx")
+    # 代码列强制6位文本, 防Excel数值化丢前导零
+    for d in (scored, df):
+        d["fund_code"] = d["fund_code"].astype(str).str.zfill(6)
     with pd.ExcelWriter(out_path) as xw:
         scored.sort_values("composite_score", ascending=False).to_excel(xw, sheet_name="评分", index=False)
         df[df["channel"] == "theme_observation"].to_excel(xw, sheet_name="主题观察池", index=False)

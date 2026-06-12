@@ -39,7 +39,10 @@ def fund_universe() -> pd.DataFrame:
         df = ak.fund_name_em()  # 东财全量: 基金代码/简称/类型
         df = df.rename(columns={"基金代码": "fund_code", "基金简称": "fund_name", "基金类型": "fund_type"})
         return df[["fund_code", "fund_name", "fund_type"]]
-    return cached("fund_universe", fetch, max_age_days=7)
+    df = cached("fund_universe", fetch, max_age_days=7)
+    # 防御: 代码统一为6位字符串(防止任何环节被转成 int 丢前导零)
+    df["fund_code"] = df["fund_code"].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(6)
+    return df
 
 
 def active_equity_universe() -> pd.DataFrame:
