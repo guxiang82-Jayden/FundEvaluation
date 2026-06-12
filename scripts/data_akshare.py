@@ -1,7 +1,7 @@
 """AKShare 数据适配层 (脚本独立运行的主数据源)
 职责: 取数 + 整形为标准格式 + 本地缓存(parquet)
 注: MCP(且慢/iFinD) 仅 Claude 会话可调用, 不进此层; 其数据用于会话内交叉校验
-接口名以 AKShare 1.x 为准, 首次实跑时核对
+接口名以 AKShare 1.x 为准, 已于 2026-06-12 实测核对
 """
 import os
 from datetime import datetime
@@ -51,9 +51,32 @@ def active_equity_universe() -> pd.DataFrame:
     df = fund_universe()
     mask = df["fund_type"].str.contains("混合型-偏股|混合型-灵活|股票型", na=False, regex=True)
     mask &= ~df["fund_type"].str.contains("指数|QDII|FOF|债券|货币|理财|联接", na=False, regex=True)
-    # 后端收费份额剔除(简称含"后端"), C类等多份额在 L0 合并
+    # 后端收费份额剔除(简称含"后端"); 91开头为转型/场内特殊代码, 无公开数据
     mask &= ~df["fund_name"].str.contains("后端", na=False)
-    return df[mask].reset_index(drop=True)
+    mask &= ~df["fund_code"].str.startswith("91")
+    out = df[mask].reset_index(drop=True)
+    return merge_share_classes(out)
+
+
+def merge_share_classes(df: pd.DataFrame) -> pd.DataFrame:
+    """多份额合并: 同名基金(去掉尾缀份额字母)只保留主份额
+    优先级: 名称以A结尾 > 无字母尾缀 > 代码最小. 例: 稳健回报A/C -> 保留A"""
+    import re
+    base = df["fund_name"].str.replace(r"[A-Z]+$", "", regex=True)
+
+    def priority(name):
+        if re.search(r"A$", name):
+            return 0
+        if not re.search(r"[A-Z]$", name):
+            return 1
+        return 2
+
+    tmp = df.assign(_base=base, _prio=df["fund_name"].map(priority))
+    tmp = tmp.sort_values(["_base", "_prio", "fund_code"])
+    merged = tmp.drop_duplicates("_base", keep="first").drop(columns=["_base", "_prio"])
+    print(f"  份额合并: {len(df)} -> {len(merged)}")
+    # 恢复按代码排序, 保证 limit 抽样可复现
+    return merged.sort_values("fund_code").reset_index(drop=True)
 
 
 # ---------- 净值 ----------
@@ -63,6 +86,8 @@ def fund_nav(fund_code: str) -> pd.Series:
     TODO v0.2: 用 单位净值+分红送配详情 自建复权净值"""
     def fetch():
         df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="累计净值走势")
+        if df.empty or "净值日期" not in df.columns:
+            raise ValueError("无净值数据(新发/特殊基金)")
         df = df.rename(columns={"净值日期": "date", "累计净值": "nav"})
         df["date"] = pd.to_datetime(df["date"])
         return df[["date", "nav"]]
@@ -106,6 +131,7 @@ def load_all_index_returns_v2() -> dict:
 
 
 def load_all_index_returns() -> dict:
+    """(兼容旧入口)"""
     out = {}
     for code in set(config.BENCHMARK_INDEX_MAP.values()) | {config.DEFAULT_EQUITY_BENCHMARK}:
         if code.startswith(("sh", "sz")):
@@ -117,10 +143,16 @@ def load_all_index_returns() -> dict:
 
 
 # ---------- 元数据(初筛用) ----------
-def fund_meta(fund_code: str) -> dict:
-    """单基金初筛元数据. 多源拼接, 任一源失败该字段记 None 并继续
-    返回键与 screening.py 必需列对齐
-    ⚠️ 接口名/字段名基于 AKShare 1.18 文档, 首次实跑时核对"""
+WARN_COUNTS = {}  # 字段缺失计数(汇总打印, 避免逐行刷屏)
+
+
+def _warn(fund_code: str, field: str):
+    WARN_COUNTS.setdefault(field, []).append(fund_code)
+
+
+def fund_meta(fund_code: str, verbose: bool = False) -> dict:
+    """单基金初筛元数据. 多源拼接, 任一源失败该字段记 None 并继续(计入 WARN_COUNTS)
+    返回键与 screening.py 必需列对齐"""
     meta = {"fund_code": fund_code}
 
     # 1) 雪球基本信息(实测可用): 成立时间/最新规模/经理名单/业绩比较基准 ★
@@ -135,7 +167,9 @@ def fund_meta(fund_code: str) -> dict:
         meta["benchmark_text"] = kv.get("业绩比较基准")  # 供 benchmark.py 逐基金解析
         meta["fund_company"] = kv.get("基金公司")
     except Exception as e:  # noqa: BLE001
-        print(f"[warn] {fund_code} basic_info 失败: {e}")
+        _warn(fund_code, "basic_info")
+        if verbose:
+            print(f"[warn] {fund_code} basic_info 失败: {e}")
 
     # 2) 经理(实测: fund_manager_em 有'现任基金代码'列, 但无单基金任职起始日)
     # ⚠️ N4/N5 所需"任期"两个源均拿不到, 待补: 候选 ak.fund_manager_change_em /
@@ -147,7 +181,9 @@ def fund_meta(fund_code: str) -> dict:
             meta["manager_names"] = mine["姓名"].tolist()
             meta["manager_career_days"] = mine["累计从业时间"].max()  # 总从业, 非本基金任期
     except Exception as e:  # noqa: BLE001
-        print(f"[warn] {fund_code} manager 失败: {e}")
+        _warn(fund_code, "manager")
+        if verbose:
+            print(f"[warn] {fund_code} manager 失败: {e}")
 
     # 3) 资产配置(实测: fund_individual_detail_hold_xq 返回 资产类型/仓位占比)
     #    用于 N9 仓位规则与灵活配置型的权益中枢判断; 持有人结构(N6)另找源
@@ -157,7 +193,9 @@ def fund_meta(fund_code: str) -> dict:
         if "股票" in kv:
             meta["equity_position"] = float(kv["股票"]) / 100.0
     except Exception as e:  # noqa: BLE001
-        print(f"[warn] {fund_code} 资产配置 失败: {e}")
+        _warn(fund_code, "资产配置")
+        if verbose:
+            print(f"[warn] {fund_code} 资产配置 失败: {e}")
 
     return meta
 
@@ -175,7 +213,7 @@ def _parse_scale_yi(text: str) -> float | None:
     return v
 
 
-def build_meta_table(fund_codes: list[str]) -> pd.DataFrame:
+def build_meta_table(fund_codes: list) -> pd.DataFrame:
     """批量元数据表(供 screening). 注意接口限频, 必要时加 sleep"""
     import time
     rows = []
@@ -184,6 +222,10 @@ def build_meta_table(fund_codes: list[str]) -> pd.DataFrame:
         time.sleep(0.3)  # 雪球/东财限频保护
         if (i + 1) % 50 == 0:
             print(f"  meta {i+1}/{len(fund_codes)}")
+    if WARN_COUNTS:
+        summary = {k: len(v) for k, v in WARN_COUNTS.items()}
+        print(f"  元数据字段缺失汇总(多为新发/特殊基金, 已降级): {summary}")
+        WARN_COUNTS.clear()
     df = pd.DataFrame(rows)
     # screening 需要但本层暂无法提供的列, 补默认值(规则自动跳过)
     for col, default in [("tenure_years", None), ("manager_changed_recent", None),

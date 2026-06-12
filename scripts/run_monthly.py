@@ -81,6 +81,21 @@ def main():
     print(f"输出: {out_path}")
     print(f"重点池: {scored['focus_pool'].sum()} 只")
 
+    # ---- 质检汇总 ----
+    print("\n== 质检 ==")
+    print(f"代码6位占比: {(scored['fund_code'].str.len() == 6).mean():.0%}")
+    if "valid_5y" in scored:
+        print(f"5y数据齐占比: {scored['valid_5y'].mean():.1%}")
+    if "bench_note" in scored:
+        print(f"基准: {scored['bench_note'].str.split(':').str[0].value_counts().to_dict()}")
+    print(f"否决: {scored['veto'].sum()} | 短板: {scored['shortboard'].sum()}")
+    excluded = df[df["screened_out"]]
+    if not excluded.empty:
+        print(f"剔除原因: {excluded['screen_reasons'].str.split(';').explode().value_counts().to_dict()}")
+    cols = [c for c in ["fund_code", "fund_name", "composite_score", "score_A_return", "score_B_risk", "scale_yi"] if c in scored.columns]
+    print("\nTop10:")
+    print(scored.nlargest(10, "composite_score")[cols].round(1).to_string(index=False))
+
 
 if __name__ == "__main__":
     main()
