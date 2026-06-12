@@ -70,16 +70,24 @@ def score_all(df: pd.DataFrame) -> pd.DataFrame:
         out[col] = score_dimension(df, dim)
         dim_cols.append((col, w))
 
-    # 综合分: 缺维度按剩余权重归一
+    # 综合分: 缺维度按剩余权重归一, 同时输出覆盖率与可信度标识(防止临时分冒充五维综合分)
     def composite(row):
         num, den = 0.0, 0.0
+        covered = []
         for col, w in dim_cols:
             if pd.notna(row[col]):
                 num += row[col] * w
                 den += w
-        return num / den if den > 0 else np.nan
+                covered.append(col.replace("score_", "")[0])  # A/B/C/D/E
+        score = num / den if den > 0 else np.nan
+        return pd.Series({"composite_score": score,
+                          "weight_coverage": den,
+                          "covered_dims": "".join(covered)})
 
-    out["composite_score"] = out.apply(composite, axis=1)
+    out[["composite_score", "weight_coverage", "covered_dims"]] = out.apply(composite, axis=1)
+    out["provisional"] = out["weight_coverage"] < config.FORMAL_MIN_WEIGHT_COVERAGE
+    out["score_label"] = np.where(out["provisional"],
+                                  "provisional(" + out["covered_dims"] + ")", "formal")
 
     # 短板与否决
     score_cols = [c for c, _ in dim_cols]
@@ -88,9 +96,11 @@ def score_all(df: pd.DataFrame) -> pd.DataFrame:
     out["veto"] = out[veto_col] < config.VETO_PCTL
     out.loc[out["shortboard"], "composite_score"] *= 0.9  # 降档: 综合分打9折(v0.1 暂定)
 
-    # 重点池
+    # 重点池: provisional 评分只能进"候选池", 不得作为正式重点池
     thresh = out["composite_score"].quantile(1 - config.FOCUS_POOL_TOP_PCT)
-    out["focus_pool"] = (out["composite_score"] >= thresh) & (~out["veto"])
+    in_top = (out["composite_score"] >= thresh) & (~out["veto"])
+    out["focus_pool"] = in_top & (~out["provisional"])
+    out["candidate_pool"] = in_top & out["provisional"]
 
     # 置信度标记
     if "valid_5y" in out:

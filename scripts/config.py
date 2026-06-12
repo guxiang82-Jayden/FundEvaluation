@@ -93,6 +93,9 @@ SHORTBOARD_PCTL = 20      # 任一维度分位<20 -> 降档标记
 VETO_DIM = "B_risk"       # 风险维度一票否决
 VETO_PCTL = 10
 
+# 评分可信度: 维度权重覆盖率低于此值 -> 综合分标记 provisional, 重点池仅为"候选"
+FORMAL_MIN_WEIGHT_COVERAGE = 0.75
+
 # 评分预处理
 WINSORIZE = (0.01, 0.99)
 

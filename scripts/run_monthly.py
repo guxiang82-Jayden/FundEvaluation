@@ -79,10 +79,13 @@ def main():
         df[df["channel"] == "theme_observation"].to_excel(xw, sheet_name="主题观察池", index=False)
         df[df["screened_out"]].to_excel(xw, sheet_name="剔除清单", index=False)
     print(f"输出: {out_path}")
-    print(f"重点池: {scored['focus_pool'].sum()} 只")
+    print(f"正式重点池: {scored['focus_pool'].sum()} 只 | 候选池(provisional): {scored.get('candidate_pool', pd.Series(dtype=bool)).sum()} 只")
 
     # ---- 质检汇总 ----
     print("\n== 质检 ==")
+    if "score_label" in scored:
+        print(f"评分可信度: {scored['score_label'].value_counts().to_dict()}")
+        print(f"维度权重覆盖率均值: {scored['weight_coverage'].mean():.0%}")
     print(f"代码6位占比: {(scored['fund_code'].str.len() == 6).mean():.0%}")
     if "valid_5y" in scored:
         print(f"5y数据齐占比: {scored['valid_5y'].mean():.1%}")

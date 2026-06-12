@@ -102,6 +102,13 @@ def test_pipeline():
     scored = scoring.score_all(standard)
     assert scored["composite_score"].notna().any()
     assert scored["composite_score"].between(0, 100).all()
+    # 可信度标识: 本测试只喂 A/B 维数据 -> 必须全部标记 provisional, 不得进正式重点池
+    assert (scored["covered_dims"] == "AB").all(), scored["covered_dims"].unique()
+    assert scored["provisional"].all(), "A/B-only 评分未标记 provisional"
+    assert scored["focus_pool"].sum() == 0, "provisional 评分混入了正式重点池"
+    assert scored["candidate_pool"].sum() > 0
+    assert abs(scored["weight_coverage"].iloc[0] - 0.55) < 1e-9  # A(0.30)+B(0.25)
+    print("  可信度标识: provisional/候选池/覆盖率 0.55 ✓")
     top = scored.sort_values("composite_score", ascending=False).head(3)
     print(f"  评分: 综合分范围 [{scored['composite_score'].min():.1f}, {scored['composite_score'].max():.1f}]")
     print(f"  重点池 {scored['focus_pool'].sum()} 只, 否决 {scored['veto'].sum()} 只, 短板 {scored['shortboard'].sum()} 只")
