@@ -9,6 +9,7 @@ from datetime import date
 import pandas as pd
 
 import benchmark as bm
+import cdim
 import classify
 import config
 import data_akshare as da
@@ -80,6 +81,9 @@ def main():
     mt = build_metrics_table(codes, index_rets, bench_texts, asof=args.asof)
     df = funds.merge(meta.drop(columns=["fund_name"], errors="ignore"),
                      on="fund_code", how="right").merge(mt, on="fund_code", how="inner")
+
+    # C/E 维补充(且慢 MCP 会话内拉取的 cdim_data.csv; 无则降级)
+    df = cdim.load_cdim(df)
 
     print("== L0.5 同类组细分 ==")
     ep = (meta.set_index("fund_code")["equity_position"]

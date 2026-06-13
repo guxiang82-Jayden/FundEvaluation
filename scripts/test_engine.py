@@ -153,6 +153,28 @@ def test_primary_missing_and_investability():
     print("  规模<2亿→可投性预警→挡出正式池 ✓")
 
 
+def test_cdim_coverage():
+    print("== C/E维接入提升覆盖率测试 ==")
+    base = dict(excess_return_ann_3y=[0.10, 0.08, 0.06, 0.04, 0.02],
+                monthly_win_rate_3y=[0.6, 0.55, 0.5, 0.45, 0.4],
+                max_drawdown_3y=[-0.1, -0.15, -0.2, -0.25, -0.3],
+                calmar_3y=[2, 1.5, 1, 0.8, 0.5],
+                sortino_3y=[3, 2, 1.5, 1, 0.5],
+                scale_yi=[50, 30, 20, 15, 10], valid_3y=True)
+    # 无C/E
+    s_no = scoring.score_all(pd.DataFrame(base))
+    # 有C/E(selection_share+concentration+turnover)
+    withce = dict(base, selection_share=[0.4, 0.6, 0.4, 1.0, 0.58],
+                  concentration=[0.76, 0.84, 0.91, 0.70, 0.93],
+                  turnover=[2.7, 3.9, 7.0, 3.5, 2.1])
+    s_ce = scoring.score_all(pd.DataFrame(withce))
+    assert abs(s_no["weight_coverage"].iloc[0] - 0.55) < 0.01
+    assert abs(s_ce["weight_coverage"].iloc[0] - 0.85) < 0.01, s_ce["weight_coverage"].iloc[0]
+    assert (s_ce["score_label"] == "formal").all(), "C/E补充后未升formal"
+    assert s_ce["score_C_attribution"].notna().all() and s_ce["score_E_operation"].notna().all()
+    print(f"  覆盖率: 无C/E {s_no['weight_coverage'].iloc[0]:.0%} → 有C/E {s_ce['weight_coverage'].iloc[0]:.0%} → formal ✓")
+
+
 def test_classify_and_group_scoring():
     print("== 同类组细分+组内评分测试 ==")
     import classify
@@ -188,4 +210,5 @@ if __name__ == "__main__":
     test_pipeline()
     test_classify_and_group_scoring()
     test_primary_missing_and_investability()
+    test_cdim_coverage()
     print("\n全部测试通过 ✅")
