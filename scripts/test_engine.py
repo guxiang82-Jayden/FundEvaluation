@@ -64,6 +64,14 @@ def test_benchmark():
     parts2 = bm.parse_benchmark("中证800指数收益率*80%+活期存款利率*20%")
     assert len(parts2) == 2, parts2
     print(f"  parse 星号兼容: {parts2} ✓")
+    # 权重在前 + 全角＋
+    p3 = bm.parse_benchmark("85%×中证500指数收益率＋15%×中证全债指数收益率")
+    assert abs(dict((n, w) for n, w in p3).get("中证500指数", 0) - 0.85) < 1e-9, p3
+    print(f"  parse 权重在前/全角＋: {p3} ✓")
+    # 安全规则: 已映射权重<50% 必须回退(不得用残缺基准)
+    c4 = bm.resolve_components(bm.parse_benchmark("80%×不存在的指数+20%×中证全债指数"))
+    assert c4 == [], c4
+    print("  resolve 残缺基准回退保护 ✓")
 
 
 def test_pipeline():
@@ -122,8 +130,38 @@ def test_pipeline():
         print(f"  崩盘组 B 维低于均值 {diff:.1f} 分 {'✓' if diff > 0 else '✗ 需检查'}")
 
 
+def test_classify_and_group_scoring():
+    print("== 同类组细分+组内评分测试 ==")
+    import classify
+    df = pd.DataFrame({
+        "fund_code": [f"{i:06d}" for i in range(1, 7)],
+        "fund_name": ["华夏成长混合", "易方达医药股票", "嘉实新能源股票",
+                      "广发量化多因子混合", "兴全合润混合", "南方医疗保健灵活配置"],
+        "fund_type": ["混合型-偏股", "股票型", "股票型", "混合型-偏股", "混合型-偏股", "混合型-灵活"],
+    })
+    out = classify.classify(df)
+    assert out.loc[1, "subgroup"] == "行业主题:医药"
+    assert out.loc[5, "subgroup"] == "行业主题:医药"   # 灵活配置的医药基金也入医药组
+    assert out.loc[3, "strategy_tags"] == "量化"
+    assert out.loc[1, "backbone"] == "普通股票型"
+    print("  分类与 backbone ✓")
+
+    # 组内分位独立性: 同样的指标值, 在弱组里分位应高于在强组里
+    g1 = pd.DataFrame({"excess_return_ann_3y": [0.10, 0.08, 0.06, 0.04, 0.02, 0.05],
+                       "valid_3y": True})
+    g2 = pd.DataFrame({"excess_return_ann_3y": [0.05, 0.04, 0.03, 0.02, 0.01, 0.00],
+                       "valid_3y": True})
+    s1 = scoring.score_all(g1)   # 0.05 在强组排第4/6
+    s2 = scoring.score_all(g2)   # 0.05 在弱组排第1/6
+    r1 = s1.loc[5, "score_A_return"]
+    r2 = s2.loc[0, "score_A_return"]
+    assert r2 > r1, (r1, r2)
+    print(f"  组内分位独立性: 同值0.05 弱组{r2:.0f}分 > 强组{r1:.0f}分 ✓")
+
+
 if __name__ == "__main__":
     test_metrics()
     test_benchmark()
     test_pipeline()
+    test_classify_and_group_scoring()
     print("\n全部测试通过 ✅")

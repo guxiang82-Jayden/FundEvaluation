@@ -92,7 +92,9 @@ def fund_nav(fund_code: str) -> pd.Series:
         df["date"] = pd.to_datetime(df["date"])
         return df[["date", "nav"]]
     df = cached(f"nav_{fund_code}", fetch, max_age_days=1)
-    return df.set_index("date")["nav"].astype(float).sort_index()
+    s = df.set_index("date")["nav"].astype(float).sort_index()
+    # 个别基金存在重复净值日期(实测 001158), 保留最后一条
+    return s[~s.index.duplicated(keep="last")]
 
 
 # ---------- 指数行情(基准合成用) ----------

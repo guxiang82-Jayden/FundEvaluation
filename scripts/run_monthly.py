@@ -9,6 +9,7 @@ from datetime import date
 import pandas as pd
 
 import benchmark as bm
+import classify
 import config
 import data_akshare as da
 import metrics
@@ -52,6 +53,18 @@ def main():
     bench_texts = (dict(zip(meta["fund_code"], meta["benchmark_text"].fillna("")))
                    if "benchmark_text" in meta else {})
 
+    # 任期补充表(且慢MCP会话内生成, 当前覆盖候选池632只; 无文件自动跳过)
+    tenure_path = os.path.join("data", "manager_tenure.csv")
+    if os.path.exists(tenure_path):
+        tn = pd.read_csv(tenure_path, dtype={"fund_code": str})
+        tn["fund_code"] = tn["fund_code"].str.zfill(6)
+        tmap = tn.set_index("fund_code")
+        hit = meta["fund_code"].isin(tmap.index)
+        meta.loc[hit, "tenure_years"] = meta.loc[hit, "fund_code"].map(tmap["max_tenure_years"])
+        meta.loc[hit, "manager_changed_recent"] = meta.loc[hit, "fund_code"].map(
+            tmap["recent_manager_added"])
+        print(f"  任期补充(且慢源): 命中 {hit.sum()}/{len(meta)} 只 -> N4/N5 生效")
+
     print("== 指数行情 ==")
     index_rets = da.load_all_index_returns_v2()
 
@@ -60,14 +73,28 @@ def main():
     df = funds.merge(meta.drop(columns=["fund_name"], errors="ignore"),
                      on="fund_code", how="right").merge(mt, on="fund_code", how="inner")
 
+    print("== L0.5 同类组细分 ==")
+    ep = (meta.set_index("fund_code")["equity_position"]
+          if "equity_position" in meta.columns else None)
+    df = classify.classify(df, equity_position=ep)
+    counts = df["subgroup"].value_counts()
+    small = counts[counts < 10].index
+    df["effective_group"] = df["subgroup"].where(~df["subgroup"].isin(small), df["backbone"])
+    print(f"子组数: {df['effective_group'].nunique()} (含<10只回退 {len(small)} 组)")
+    print(df["effective_group"].value_counts().head(8).to_string())
+
     print("== L1 初筛 ==")
-    # 当前可用规则: N1/N2(规模) N3(成立) + 主题豁免; N4-N8 数据源待补自动跳过
     df = screening.apply_screening(df)
     standard = df[df["channel"] == "standard"]
     print(f"标准通道: {len(standard)} | 观察: {(df['channel']=='theme_observation').sum()} | 剔除: {df['screened_out'].sum()}")
 
-    print("== L2 评分 ==")
-    scored = scoring.score_all(standard)
+    print("== L2 评分(子组内分位) ==")
+    parts = []
+    for g, gdf in standard.groupby("effective_group"):
+        if len(gdf) < 5:
+            continue  # 极小组不评分(进观察)
+        parts.append(scoring.score_all(gdf))
+    scored = pd.concat(parts, ignore_index=True)
 
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     out_path = os.path.join(config.OUTPUT_DIR, f"score_active_equity_{args.asof or date.today().isoformat()}.xlsx")
