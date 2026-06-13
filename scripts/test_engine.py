@@ -174,6 +174,14 @@ def test_cdim_coverage():
     assert s_ce["score_C_attribution"].notna().all() and s_ce["score_E_operation"].notna().all()
     print(f"  覆盖率: 无C/E {s_no['weight_coverage'].iloc[0]:.0%} → 有C/E {s_ce['weight_coverage'].iloc[0]:.0%} → formal ✓")
 
+    # 全五维(加D: manager_experience + management_load) → 覆盖率应达 100%
+    full = dict(withce, manager_experience=[7, 6, 5, 4, 3],
+                management_load=[20, 50, 100, 150, 300])
+    s_full = scoring.score_all(pd.DataFrame(full))
+    assert abs(s_full["weight_coverage"].iloc[0] - 1.0) < 0.01, s_full["weight_coverage"].iloc[0]
+    assert s_full["score_D_manager"].notna().all()
+    print(f"  全五维覆盖率: {s_full['weight_coverage'].iloc[0]:.0%}(A+B+C+D+E)✓")
+
 
 def test_classify_and_group_scoring():
     print("== 同类组细分+组内评分测试 ==")

@@ -6,6 +6,7 @@
 import os
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 
 import config
@@ -180,8 +181,15 @@ def fund_meta(fund_code: str, verbose: bool = False) -> dict:
         allm = cached("manager_all", lambda: ak.fund_manager_em(), max_age_days=7)
         mine = allm[allm["现任基金代码"].astype(str) == fund_code]
         if not mine.empty:
-            meta["manager_names"] = mine["姓名"].tolist()
-            meta["manager_career_days"] = mine["累计从业时间"].max()  # 总从业, 非本基金任期
+            names = mine["姓名"].tolist()
+            meta["manager_names"] = names
+            meta["manager_career_days"] = mine["累计从业时间"].max()  # 总从业(D1)
+            # D2 管理半径: 主经理(从业最久者)的在管总规模 + 在管产品数
+            lead = mine.loc[mine["累计从业时间"].idxmax(), "姓名"]
+            lead_rows = allm[allm["姓名"] == lead]
+            meta["manager_total_aum"] = pd.to_numeric(
+                lead_rows["现任基金资产总规模"], errors="coerce").max()  # 亿(东财口径)
+            meta["manager_fund_count"] = lead_rows["现任基金代码"].nunique()
     except Exception as e:  # noqa: BLE001
         _warn(fund_code, "manager")
         if verbose:
@@ -237,4 +245,13 @@ def build_meta_table(fund_codes: list) -> pd.DataFrame:
             df[col] = default
     if "fund_age_years" in df:
         df["fund_age_for_style"] = df["fund_age_years"]
+
+    # D 维派生(供 scoring): 经验年限(7年封顶) + 管理半径
+    if "manager_career_days" in df:
+        df["manager_experience"] = (pd.to_numeric(df["manager_career_days"], errors="coerce")
+                                    / 365.25).clip(upper=7)
+    if "manager_total_aum" in df:
+        # 管理半径: 在管规模 × √产品数(一拖多稀释); 越大越差(scoring direction=-1)
+        cnt = pd.to_numeric(df.get("manager_fund_count", 1), errors="coerce").fillna(1)
+        df["management_load"] = pd.to_numeric(df["manager_total_aum"], errors="coerce") * np.sqrt(cnt)
     return df

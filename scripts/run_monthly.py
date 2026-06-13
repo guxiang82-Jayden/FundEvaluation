@@ -123,6 +123,13 @@ def main():
         micro_board.to_excel(xw, sheet_name="小微观察区", index=False)
         df[df["channel"] == "theme_observation"].to_excel(xw, sheet_name="主题观察池", index=False)
         df[df["screened_out"]].to_excel(xw, sheet_name="剔除清单", index=False)
+    # 自动归档(复盘机制需多期存档对比); --limit 调试跑不归档
+    if not args.limit:
+        import shutil
+        archive_dir = os.path.join("..", "archive")
+        os.makedirs(archive_dir, exist_ok=True)
+        shutil.copy(out_path, os.path.join(archive_dir, os.path.basename(out_path)))
+        print(f"已归档 → archive/{os.path.basename(out_path)}")
     print(f"输出: {out_path}")
     print(f"可投主榜: {len(main_board)} | 小微观察区: {len(micro_board)}")
     print(f"正式重点池: {scored['focus_pool'].sum()} 只 | 候选池(provisional): {scored.get('candidate_pool', pd.Series(dtype=bool)).sum()} 只")
