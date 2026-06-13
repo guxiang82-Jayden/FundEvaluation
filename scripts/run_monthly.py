@@ -20,10 +20,18 @@ import scoring
 def build_metrics_table(codes: list, index_rets: dict, bench_texts: dict, asof=None) -> pd.DataFrame:
     """bench_texts: fund_code -> 业绩基准字符串(来自雪球基本信息), 逐基金解析合成"""
     rows = []
+    default_ret = index_rets.get(config.DEFAULT_EQUITY_BENCHMARK)
     for i, code in enumerate(codes):
         try:
             nav = da.fund_nav(code)
             bench_ret, bench_note = bm.get_benchmark_returns(bench_texts.get(code, ""), index_rets)
+            # 根因修复: 合成基准与基金近3年窗口重叠不足(债券/港股成分数据短)-> 回退默认基准
+            if default_ret is not None and not nav.empty:
+                win = nav.loc[nav.index >= nav.index[-1] - pd.Timedelta(days=365 * 3)]
+                overlap = bench_ret.index.isin(win.index).sum() if not bench_ret.empty else 0
+                if overlap < max(60, int(len(win) * 0.5)):
+                    bench_ret = default_ret
+                    bench_note = f"fallback_overlap:{config.DEFAULT_EQUITY_BENCHMARK}"
             m = metrics.compute_fund_metrics(nav, bench_ret, asof=asof)
             m["fund_code"] = code
             m["bench_note"] = bench_note

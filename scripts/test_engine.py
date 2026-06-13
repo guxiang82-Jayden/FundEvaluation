@@ -130,6 +130,29 @@ def test_pipeline():
         print(f"  崩盘组 B 维低于均值 {diff:.1f} 分 {'✓' if diff > 0 else '✗ 需检查'}")
 
 
+def test_primary_missing_and_investability():
+    print("== 主维缺失否决 + 可投性测试 ==")
+    # 6只: 1只A维全缺(只有B), 1只规模过小, 其余正常
+    df = pd.DataFrame({
+        "excess_return_ann_3y": [0.10, 0.08, 0.06, 0.04, 0.02, None],  # 最后一只A维缺
+        "monthly_win_rate_3y": [0.6, 0.55, 0.5, 0.45, 0.4, None],
+        "max_drawdown_3y": [-0.1, -0.15, -0.2, -0.25, -0.3, -0.05],   # 缺A那只回撤最小
+        "calmar_3y": [2, 1.5, 1, 0.8, 0.5, 3],
+        "sortino_3y": [3, 2, 1.5, 1, 0.5, 4],
+        "scale_yi": [50, 30, 20, 1.0, 10, 40],   # 第4只规模1亿(<2)
+        "valid_3y": True,
+    })
+    s = scoring.score_all(df)
+    # A维缺的那只(idx5): primary_missing=True, veto=True, 不进任何池
+    assert s.loc[5, "primary_missing"], "A维缺未标记"
+    assert s.loc[5, "veto"], "A维缺未否决"
+    assert not s.loc[5, "focus_pool"] and not s.loc[5, "candidate_pool"], "A维缺仍进池"
+    print("  A维缺失→否决→不进池 ✓")
+    # 规模1亿那只(idx3): investability_warn=True, 不进正式focus_pool
+    assert s.loc[3, "investability_warn"], "小规模未预警"
+    print("  规模<2亿→可投性预警→挡出正式池 ✓")
+
+
 def test_classify_and_group_scoring():
     print("== 同类组细分+组内评分测试 ==")
     import classify
@@ -164,4 +187,5 @@ if __name__ == "__main__":
     test_benchmark()
     test_pipeline()
     test_classify_and_group_scoring()
+    test_primary_missing_and_investability()
     print("\n全部测试通过 ✅")

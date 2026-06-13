@@ -95,6 +95,8 @@ VETO_PCTL = 10
 
 # 评分可信度: 维度权重覆盖率低于此值 -> 综合分标记 provisional, 重点池仅为"候选"
 FORMAL_MIN_WEIGHT_COVERAGE = 0.75
+PRIMARY_DIM = "A_return"   # 主维(收益): 整维缺失则否决排名(防风险维独撑虚高)
+MICRO_SCALE_YI = 2.0       # 可投性下限(亿): 规模<此值或缺失 -> 容量/限购风险, 不进正式重点池
 
 # 评分预处理
 WINSORIZE = (0.01, 0.99)

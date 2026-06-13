@@ -94,13 +94,27 @@ def score_all(df: pd.DataFrame) -> pd.DataFrame:
     out["shortboard"] = (out[score_cols] < config.SHORTBOARD_PCTL).any(axis=1)
     veto_col = f"score_{config.VETO_DIM}"
     out["veto"] = out[veto_col] < config.VETO_PCTL
+
+    # 主维缺失否决: 收益维(A)整维算不出 -> 综合分只剩风险维, 会让低波动小基金虚高
+    # 这类基金不得参与排名(标记 primary_missing), 单独成池
+    primary_col = f"score_{config.PRIMARY_DIM}"
+    out["primary_missing"] = out[primary_col].isna()
+    out.loc[out["primary_missing"], "veto"] = True
+
     out.loc[out["shortboard"], "composite_score"] *= 0.9  # 降档: 综合分打9折(v0.1 暂定)
 
-    # 重点池: provisional 评分只能进"候选池", 不得作为正式重点池
+    # 可投性: 规模过小或缺失 -> 容量/限购风险, 不进正式池(参考核心原则: 排名须可投)
+    if "scale_yi" in out:
+        out["investability_warn"] = (out["scale_yi"].fillna(0) < config.MICRO_SCALE_YI)
+    else:
+        out["investability_warn"] = False
+
+    # 重点池: 须 formal(覆盖率达标) + 非否决 + 非主维缺失 + 可投
     thresh = out["composite_score"].quantile(1 - config.FOCUS_POOL_TOP_PCT)
     in_top = (out["composite_score"] >= thresh) & (~out["veto"])
-    out["focus_pool"] = in_top & (~out["provisional"])
-    out["candidate_pool"] = in_top & out["provisional"]
+    out["focus_pool"] = in_top & (~out["provisional"]) & (~out["investability_warn"])
+    # 候选池: provisional 但其余条件满足(数据补齐后可升入重点池)
+    out["candidate_pool"] = in_top & out["provisional"] & (~out["primary_missing"])
 
     # 置信度标记
     if "valid_5y" in out:
