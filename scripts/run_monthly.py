@@ -122,7 +122,8 @@ def main():
     print(f"输出: {out_path}")
     print(f"可投主榜: {len(main_board)} | 小微观察区: {len(micro_board)}")
     print(f"正式重点池: {scored['focus_pool'].sum()} 只 | 候选池(provisional): {scored.get('candidate_pool', pd.Series(dtype=bool)).sum()} 只")
-    print("\n可投主榜 Top10:")
+    # 注: Excel 各 sheet 存全量完整排序; 以下仅控制台预览前10行, 不代表只保留10只
+    print("\n可投主榜 Top10(仅预览, Excel 存全部):")
     cols = [c for c in ["fund_code", "fund_name", "composite_score", "score_A_return", "score_B_risk", "scale_yi", "effective_group"] if c in main_board.columns]
     print(main_board.head(10)[cols].round(1).to_string(index=False))
 
