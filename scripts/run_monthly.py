@@ -109,12 +109,22 @@ def main():
     # 代码列强制6位文本, 防Excel数值化丢前导零
     for d in (scored, df):
         d["fund_code"] = d["fund_code"].astype(str).str.zfill(6)
+    scored_sorted = scored.sort_values("composite_score", ascending=False)
+    # 可投主榜 vs 小微观察区(investability_warn: 规模<MICRO 或缺失)
+    warn = scored_sorted.get("investability_warn", pd.Series(False, index=scored_sorted.index))
+    main_board = scored_sorted[~warn.fillna(False)]
+    micro_board = scored_sorted[warn.fillna(False)]
     with pd.ExcelWriter(out_path) as xw:
-        scored.sort_values("composite_score", ascending=False).to_excel(xw, sheet_name="评分", index=False)
+        main_board.to_excel(xw, sheet_name="可投主榜", index=False)
+        micro_board.to_excel(xw, sheet_name="小微观察区", index=False)
         df[df["channel"] == "theme_observation"].to_excel(xw, sheet_name="主题观察池", index=False)
         df[df["screened_out"]].to_excel(xw, sheet_name="剔除清单", index=False)
     print(f"输出: {out_path}")
+    print(f"可投主榜: {len(main_board)} | 小微观察区: {len(micro_board)}")
     print(f"正式重点池: {scored['focus_pool'].sum()} 只 | 候选池(provisional): {scored.get('candidate_pool', pd.Series(dtype=bool)).sum()} 只")
+    print("\n可投主榜 Top10:")
+    cols = [c for c in ["fund_code", "fund_name", "composite_score", "score_A_return", "score_B_risk", "scale_yi", "effective_group"] if c in main_board.columns]
+    print(main_board.head(10)[cols].round(1).to_string(index=False))
 
     # ---- 质检汇总 ----
     print("\n== 质检 ==")
