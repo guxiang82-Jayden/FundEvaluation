@@ -1,0 +1,25 @@
+fund_nav reindex fix verification
+Date: 2026-06-14
+
+Raw AKShare findings:
+- All five current responses had no duplicate parsed dates.
+- 003984 contained 2 non-numeric/empty NAV observations.
+- The historical failure is consistent with transient duplicate responses or
+  a previously cached dirty response.
+
+Post-fix real-data verification:
+- 003984: 2226 rows, 2017-03-16 -> 2026-06-12, OK
+- 009092: 1417 rows, 2020-06-24 -> 2026-06-12, OK
+- 009126: 1466 rows, 2020-04-15 -> 2026-06-12, OK
+- 001158: 2706 rows, 2015-04-28 -> 2026-06-12, OK
+- 481013: 3646 rows, 2011-04-21 -> 2026-06-12, OK
+
+For every series:
+- non-empty
+- unique DatetimeIndex
+- no NaT index or NaN NAV
+- monotonic increasing index
+
+Regression verification:
+- python -m py_compile data_akshare.py: PASS
+- PYTHONUTF8=1 python test_engine.py: PASS

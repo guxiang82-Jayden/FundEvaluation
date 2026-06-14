@@ -87,15 +87,24 @@ def fund_nav(fund_code: str) -> pd.Series:
     TODO v0.2: 用 单位净值+分红送配详情 自建复权净值"""
     def fetch():
         df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="累计净值走势")
-        if df.empty or "净值日期" not in df.columns:
+        if df.empty or not {"净值日期", "累计净值"}.issubset(df.columns):
             raise ValueError("无净值数据(新发/特殊基金)")
         df = df.rename(columns={"净值日期": "date", "累计净值": "nav"})
-        df["date"] = pd.to_datetime(df["date"])
-        return df[["date", "nav"]]
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df["nav"] = pd.to_numeric(df["nav"], errors="coerce")
+        return (df[["date", "nav"]]
+                .dropna(subset=["date", "nav"])
+                .sort_values("date", kind="stable")
+                .drop_duplicates("date", keep="last"))
     df = cached(f"nav_{fund_code}", fetch, max_age_days=1)
-    s = df.set_index("date")["nav"].astype(float).sort_index()
-    # 个别基金存在重复净值日期(实测 001158), 保留最后一条
-    return s[~s.index.duplicated(keep="last")]
+    # 再清洗一次以兼容修复前生成的坏缓存。
+    df = df[["date", "nav"]].copy()
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["nav"] = pd.to_numeric(df["nav"], errors="coerce")
+    df = (df.dropna(subset=["date", "nav"])
+          .sort_values("date", kind="stable")
+          .drop_duplicates("date", keep="last"))
+    return df.set_index("date")["nav"]
 
 
 # ---------- 指数行情(基准合成用) ----------
