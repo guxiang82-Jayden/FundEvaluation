@@ -50,6 +50,21 @@ def cpr_persistence(nav: pd.Series) -> float:
     return float(min((WW * LL) / (WL * LW), 10.0))
 
 
+def _selection_share(reg: dict, factors: pd.DataFrame) -> float:
+    """C1 择券占比(净值法代理): alpha(择券/择时残差)占 (|alpha|+|因子beta贡献|) 的比。
+    近似 NAFMII"择券占超额比", 无需持仓。范围裁剪 [-1, 2]。"""
+    alpha = reg.get("alpha_ann")
+    betas = reg.get("betas") or {}
+    if alpha is None or not betas or (isinstance(alpha, float) and np.isnan(alpha)):
+        return np.nan
+    fac_ann = sum(betas.get(f, 0.0) * float(factors[f].mean()) * 52
+                  for f in factors.columns)
+    denom = abs(alpha) + abs(fac_ann)
+    if denom < 1e-9:
+        return np.nan
+    return float(max(-1.0, min(2.0, alpha / denom)))
+
+
 def compute_bond_metrics(nav: pd.Series, factors: pd.DataFrame = None,
                          asof=None) -> dict:
     """单只债基 3y/5y 风控指标 + 全样本 Campisi alpha + CPR, 返回扁平 dict。
@@ -78,6 +93,7 @@ def compute_bond_metrics(nav: pd.Series, factors: pd.DataFrame = None,
         out["campisi_r2"] = reg["r2"]
         out["campisi_conf"] = reg["confidence"]
         out["campisi_n"] = reg["n"]
+        out["selection_share_bond"] = _selection_share(reg, factors)  # C1
     return out
 
 

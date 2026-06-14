@@ -105,13 +105,14 @@ def test_end_to_end():
 
     # 1) 综合分合法
     assert scored["composite_score"].between(0, 100).all()
-    # 2) 覆盖率: A+B+D+E 齐(缺C 0.25) -> 0.75 -> formal
+    # 2) 覆盖率: C1(净值法择券)使 C 维生效 -> A+B+C+D+E -> 1.0 -> formal
     cov = scored["weight_coverage"].iloc[0]
-    assert abs(cov - 0.75) < 1e-9, cov
-    assert (scored["covered_dims"] == "ABDE").all(), scored["covered_dims"].unique()
-    assert (scored["score_label"] == "formal").all(), "A+B+D+E(0.75)应判 formal"
-    # 3) C 维确实缺失(留待持仓数据)
-    assert scored["score_C_attribution"].isna().all()
+    assert abs(cov - 1.0) < 1e-9, cov
+    assert (scored["covered_dims"] == "ABCDE").all(), scored["covered_dims"].unique()
+    assert (scored["score_label"] == "formal").all(), "全五维应 formal"
+    # 3) C 维由净值法 Campisi 残差(C1 选股占比)算出, 无需持仓
+    assert scored["score_C_attribution"].notna().any()
+    assert scored["selection_share_bond"].notna().any()
     # 4) 崩盘组 B 维显著低于均值
     crash_codes = [f"{i+1:06d}" for i in (0, n_per)]
     crash_in = scored[scored["fund_code"].isin(crash_codes)]
@@ -119,7 +120,7 @@ def test_end_to_end():
     assert diff > 0, "崩盘基金 B 维未低于均值"
     # 5) Campisi alpha 已落表
     assert scored["campisi_alpha"].notna().any()
-    print(f"  评分 {len(scored)} 只 | 覆盖率 {cov:.0%}(ABDE)→formal ✓")
+    print(f"  评分 {len(scored)} 只 | 覆盖率 {cov:.0%}(ABCDE)→formal ✓")
     print(f"  崩盘组 B 维低于均值 {diff:.1f} 分 ✓ | 重点池 {scored['focus_pool'].sum()} 只")
     print(f"  综合分范围 [{scored['composite_score'].min():.1f}, {scored['composite_score'].max():.1f}]")
     cols = ["fund_code", "composite_score", "score_A_return", "score_B_risk",

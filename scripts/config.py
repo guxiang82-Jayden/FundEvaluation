@@ -130,6 +130,49 @@ BOND_INDICATORS = {
     },
 }
 
+# ---------- L2 记分卡 · 固收+ (v0.4 固收线, 对应 10_固收线框架v0.4 第4节) ----------
+# 评价核心: 绝对收益体验(回撤控制+达标率), 风险维最重; 先按权益中枢分组再比较
+# 债底沿用纯债 C 维(信用/久期); 净值五因子 R² 低 -> 须辅持仓(部分指标待持仓接入)
+BOND_PLUS_DIM_WEIGHTS = {
+    "A_return": 0.25,        # 收益质量(绝对收益/超额)
+    "B_risk": 0.40,          # 风险控制(固收+最重: 目标回撤达标)
+    "C_attribution": 0.20,   # 收益来源(股债贡献分解 + 债底)
+    "D_manager": 0.10,
+    "E_operation": 0.05,
+}
+
+BOND_PLUS_INDICATORS = {
+    "A_return": {
+        "ann_return": (0.40, 1),               # 绝对年化收益
+        "campisi_alpha": (0.30, 1),            # 净值法 alpha
+        "monthly_positive_ratio": (0.30, 1),   # 月度正收益占比
+    },
+    "B_risk": {
+        "target_dd_pass": (0.35, 1),           # 目标回撤达标率(<阈值的滚动占比)★固收+模块算
+        "max_drawdown": (0.30, 1),             # 最大回撤(取负后高=好)
+        "calmar": (0.20, 1),                   # 收益回撤比
+        "recovery_days": (0.15, -1),           # 修复天数
+    },
+    "C_attribution": {
+        "equity_contrib_ratio": (0.40, 0),     # 股债贡献分解: 权益贡献占比(U型, 适度)★固收+模块算
+        "convertible_ratio": (0.20, 0),        # 转债仓位(U型: 适度)
+        "credit_sink": (0.20, 0),              # 债底信用下沉(U型)
+        "duration_dev": (0.20, 0),             # 债底久期偏离(U型)
+    },
+    "D_manager": {
+        "manager_experience": (0.50, 1),
+        "management_load": (0.50, -1),
+    },
+    "E_operation": {
+        "total_fee": (0.60, -1),
+        "inst_ratio": (0.40, -1),
+    },
+}
+
+# 固收+ 权益中枢分组阈值(框架§4: 保守<10% / 稳健10-20% / 积极20-30%)
+BOND_PLUS_EQUITY_BANDS = {"保守": (0.0, 0.10), "稳健": (0.10, 0.20), "积极": (0.20, 1.0)}
+BOND_PLUS_TARGET_DD = -0.03   # 目标回撤阈值(达标率基准, 先验; 按中枢可分档, 待回测校准)
+
 # 短板规则
 SHORTBOARD_PCTL = 20      # 任一维度分位<20 -> 降档标记
 VETO_DIM = "B_risk"       # 风险维度一票否决
