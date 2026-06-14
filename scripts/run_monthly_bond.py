@@ -29,11 +29,14 @@ def bond_universe() -> pd.DataFrame:
     return u[mask].drop_duplicates("fund_code").copy()
 
 
-def build_bond_metrics_table(codes: list, factors: pd.DataFrame, asof=None) -> pd.DataFrame:
+def build_bond_metrics_table(codes: list, factors: pd.DataFrame, asof=None):
+    """返回 (指标宽表 df, navs dict)。navs 供固收+ 的 build_bond_plus_metrics 复用。"""
     rows = []
+    navs = {}
     for i, code in enumerate(codes):
         try:
             nav = da.fund_nav(code)
+            navs[code] = nav
             m = metrics_bond.compute_bond_metrics(nav, factors, asof=asof)
             m["fund_code"] = code
             rows.append(m)
@@ -41,7 +44,7 @@ def build_bond_metrics_table(codes: list, factors: pd.DataFrame, asof=None) -> p
             print(f"[warn] {code} bond metrics failed: {e}")
         if (i + 1) % 50 == 0:
             print(f"  metrics {i+1}/{len(codes)}")
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), navs
 
 
 def derive_de_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -53,6 +56,77 @@ def derive_de_columns(df: pd.DataFrame) -> pd.DataFrame:
         df["management_load"] = pd.to_numeric(df["manager_total_aum"], errors="coerce")
     # total_fee 已由 fund_meta 提供; inst_ratio 暂无源(E2 缺 -> 按剩余权重归一)
     return df
+
+
+# 固收+ 分流: 这些子组走 BOND_PLUS 记分卡(权益中枢分组), 其余走纯债 BOND 记分卡
+BOND_PLUS_SUBGROUPS = {"偏债混合/固收+", "混合债券二级"}
+
+
+def split_tracks(std_df: pd.DataFrame):
+    """按 bond_subgroup 分流为 (纯债track, 固收+track)。"""
+    is_plus = std_df["bond_subgroup"].isin(BOND_PLUS_SUBGROUPS)
+    return std_df[~is_plus].copy(), std_df[is_plus].copy()
+
+
+def _score_grouped(std_df: pd.DataFrame, group_col: str,
+                   dim_weights: dict, indicators: dict) -> pd.DataFrame:
+    """组内(>=5只)分位评分, 复用 scoring.score_all。"""
+    parts = []
+    for _, gdf in std_df.groupby(group_col):
+        if len(gdf) < 5:
+            continue
+        parts.append(scoring.score_all(
+            gdf, dim_weights=dim_weights, indicators=indicators,
+            veto_dim="B_risk", primary_dim="A_return"))
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+
+
+def score_bond_track(std_bond: pd.DataFrame) -> pd.DataFrame:
+    """纯债 track: 子组内 BOND 记分卡(<10只回退纯债综合)。"""
+    if std_bond.empty:
+        return std_bond
+    df = std_bond.copy()
+    counts = df["bond_subgroup"].value_counts()
+    small = counts[counts < 10].index
+    df["effective_group"] = df["bond_subgroup"].where(
+        ~df["bond_subgroup"].isin(small), "纯债综合")
+    scored = _score_grouped(df, "effective_group",
+                            config.BOND_DIM_WEIGHTS, config.BOND_INDICATORS)
+    if not scored.empty:
+        scored["scorecard"] = "BOND"
+    return scored
+
+
+def score_plus_track(std_plus: pd.DataFrame, navs: dict = None,
+                     equity_index_ret: pd.Series = None) -> pd.DataFrame:
+    """固收+ track: 用 scoring_bond_plus(权益中枢分组 + 目标回撤达标率/股债贡献分解);
+    模块未就绪或缺 equity_position 时, 用纯债 BOND 记分卡兜底。"""
+    if std_plus.empty:
+        return std_plus
+    try:
+        import scoring_bond_plus
+    except ImportError:
+        scoring_bond_plus = None
+    has_eq = ("equity_position" in std_plus.columns
+              and std_plus["equity_position"].notna().any())
+    if scoring_bond_plus is not None and hasattr(scoring_bond_plus, "score_bond_plus") and has_eq:
+        df = std_plus.copy()
+        # 用净值 + 权益指数补 target_dd_pass / equity_contrib_ratio(缺则该指标自动跳过)
+        if navs and hasattr(scoring_bond_plus, "build_bond_plus_metrics"):
+            df = scoring_bond_plus.build_bond_plus_metrics(df, navs, equity_index_ret)
+        scored = scoring_bond_plus.score_bond_plus(df)
+        if scored is not None and not scored.empty:
+            scored["scorecard"] = "BOND_PLUS"
+        return scored
+    reason = "scoring_bond_plus 未就绪" if scoring_bond_plus is None else "缺 equity_position"
+    print(f"  [固收+] {reason} -> 暂用纯债记分卡兜底(待条件满足自动切 BOND_PLUS)")
+    df = std_plus.copy()
+    df["effective_group"] = df["bond_subgroup"]
+    scored = _score_grouped(df, "effective_group",
+                            config.BOND_DIM_WEIGHTS, config.BOND_INDICATORS)
+    if not scored.empty:
+        scored["scorecard"] = "BOND(fallback)"
+    return scored
 
 
 def main():
@@ -77,7 +151,7 @@ def main():
     print(f"  可用因子: {list(factors.columns)} ({len(factors.columns)})")
 
     print("== 指标计算(净值风控 + Campisi alpha) ==")
-    mt = build_bond_metrics_table(codes, factors, asof=args.asof)
+    mt, navs = build_bond_metrics_table(codes, factors, asof=args.asof)
     df = (funds.merge(meta.drop(columns=["fund_name"], errors="ignore"),
                       on="fund_code", how="right")
           .merge(mt, on="fund_code", how="inner"))
@@ -91,25 +165,23 @@ def main():
     standard = df[df["channel"] == "standard"].copy()
     print(f"标准通道: {len(standard)} | 剔除: {df['screened_out'].sum()}")
 
-    print("== L2 评分(子组内分位, 债基记分卡) ==")
-    counts = standard["bond_subgroup"].value_counts()
-    small = counts[counts < 10].index
-    standard["effective_group"] = standard["bond_subgroup"].where(
-        ~standard["bond_subgroup"].isin(small), "债基综合")
-    print(f"子组数: {standard['effective_group'].nunique()} (含<10只回退 {len(small)} 组)")
+    # 固收+ 股债贡献分解需权益指数收益(默认基准); 失败则 equity_contrib 置空
+    try:
+        equity_index_ret = da.index_returns(config.DEFAULT_EQUITY_BENCHMARK)
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] 权益指数取数失败, equity_contrib 跳过: {e}")
+        equity_index_ret = None
 
-    parts = []
-    for g, gdf in standard.groupby("effective_group"):
-        if len(gdf) < 5:
-            continue  # 极小组不评分
-        parts.append(scoring.score_all(
-            gdf, dim_weights=config.BOND_DIM_WEIGHTS,
-            indicators=config.BOND_INDICATORS,
-            veto_dim="B_risk", primary_dim="A_return"))
-    if not parts:
+    print("== L2 评分(分流: 纯债 BOND / 固收+ BOND_PLUS) ==")
+    bond_std, plus_std = split_tracks(standard)
+    print(f"  纯债 track: {len(bond_std)} 只 | 固收+ track: {len(plus_std)} 只")
+    scored_bond = score_bond_track(bond_std)
+    scored_plus = score_plus_track(plus_std, navs=navs, equity_index_ret=equity_index_ret)
+    scored = pd.concat([x for x in (scored_bond, scored_plus) if not x.empty],
+                       ignore_index=True)
+    if scored.empty:
         print("无足量子组可评分, 退出。")
         return
-    scored = pd.concat(parts, ignore_index=True)
 
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     out_path = os.path.join(
@@ -145,10 +217,12 @@ def main():
         print(f"维度权重覆盖率均值: {scored['weight_coverage'].mean():.0%}")
     if "campisi_conf" in scored:
         print(f"Campisi 置信度分布: {scored['campisi_conf'].value_counts().to_dict()}")
+    if "scorecard" in scored:
+        print(f"记分卡分布: {scored['scorecard'].value_counts().to_dict()}")
     print(f"否决: {scored['veto'].sum()} | 短板: {scored['shortboard'].sum()}")
     cols = [c for c in ["fund_code", "fund_name", "composite_score",
                         "score_A_return", "score_B_risk", "campisi_alpha",
-                        "scale_yi", "effective_group"] if c in main_board.columns]
+                        "scale_yi", "scorecard", "effective_group"] if c in main_board.columns]
     print("\n可投主榜 Top10(仅预览, Excel 存全部):")
     print(main_board.head(10)[cols].round(3).to_string(index=False))
 

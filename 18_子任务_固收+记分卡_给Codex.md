@@ -73,3 +73,5 @@ def score_bond_plus(df: pd.DataFrame) -> pd.DataFrame:
 - ❌ 不改 config/scoring/metrics_bond/run_monthly_bond/cdim_bond 等任何现有文件,不 push
 - 参考:`10_固收线框架v0.4.md` 第4节 + 现有 scoring.py / metrics_bond.py 风格
 - akshare 在本机可用(沙箱不可);权益指数可用 ak 取沪深300,或测试用合成序列
+
+✅ 已完成 2026-06-14(Codex):新增 scoring_bond_plus.py + test_scoring_bond_plus.py,三档共30只合成样本测试通过,未改主线文件。主线已对接(run_monthly_bond 分流自动切 BOND_PLUS)。待统一推送。
