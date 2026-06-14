@@ -88,6 +88,48 @@ INDICATORS = {
     },
 }
 
+# ---------- L2 记分卡 · 债基(v0.4 固收线, 对应 10_固收线框架v0.4 第3节) ----------
+# 维度权重(纯债口径): 风险控制最重, 收益质量低于权益线(纯债收益差异小)
+BOND_DIM_WEIGHTS = {
+    "A_return": 0.25,        # 收益质量
+    "B_risk": 0.35,          # 风险控制(债基最重)
+    "C_attribution": 0.25,   # 收益来源与信用
+    "D_manager": 0.10,       # 经理与平台
+    "E_operation": 0.05,     # 运作费用
+}
+
+# 债基维度内指标(键 -> (权重, 方向: 1=越大越好, -1=越小越好, 0=U型))
+# 设计铁律: 票息不计能力分(只作标签); A1 净值法alpha 经五因子回归剔除beta后的残差
+# C 维(择券/信用/久期/杠杆)需且慢持仓数据, v0.4-1 暂缺 -> 该维按剩余权重归一/标 provisional
+BOND_INDICATORS = {
+    "A_return": {
+        "campisi_alpha": (0.45, 1),            # A1 净值法 alpha(五因子残差年化)
+        "ann_return": (0.30, 1),               # A3 同类超额(组内分位即等价同类超额)
+        "cpr_persistence": (0.25, 1),          # A2 NAFMII 胜率持续性(CPR)
+    },
+    "B_risk": {
+        "calmar": (0.30, 1),                   # B2 卡玛(核心)
+        "max_drawdown": (0.25, 1),             # B1 最大回撤(取负后高=好, 计算层处理)
+        "recovery_days": (0.15, -1),           # B1 修复天数越短越好
+        "sortino": (0.15, 1),                  # B3 下行风险
+        "monthly_positive_ratio": (0.15, 1),   # B5 月度正收益占比(绝对收益体验)
+    },
+    "C_attribution": {                          # C 维: 待且慢债基持仓工具接入
+        "selection_share_bond": (0.35, 1),     # C1 Campisi 择券占超额比
+        "credit_sink": (0.30, 0),              # C2 信用下沉度(U型: 适度为佳)
+        "duration_dev": (0.20, 0),             # C3 久期偏离(U型)
+        "leverage_contrib": (0.15, 1),         # C4 杠杆套息贡献
+    },
+    "D_manager": {
+        "manager_experience": (0.50, 1),       # D1 固收经验年限
+        "management_load": (0.50, -1),         # D2 管理半径(在管规模, 越大越差)
+    },
+    "E_operation": {
+        "total_fee": (0.60, -1),               # E1 综合费率(债基费率敏感)
+        "inst_ratio": (0.40, -1),              # E2 机构占比(大额申赎风险)
+    },
+}
+
 # 短板规则
 SHORTBOARD_PCTL = 20      # 任一维度分位<20 -> 降档标记
 VETO_DIM = "B_risk"       # 风险维度一票否决

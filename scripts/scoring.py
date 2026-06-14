@@ -45,8 +45,8 @@ _PREP = {
 }
 
 
-def score_dimension(df: pd.DataFrame, dim: str) -> pd.Series:
-    spec = config.INDICATORS[dim]
+def score_dimension(df: pd.DataFrame, dim: str, indicators: dict = None) -> pd.Series:
+    spec = (indicators or config.INDICATORS)[dim]
     parts, weights = [], []
     for ind, (w, direction) in spec.items():
         raw = blend_windows(df, ind)
@@ -62,12 +62,21 @@ def score_dimension(df: pd.DataFrame, dim: str) -> pd.Series:
     return sum(parts) / sum(weights)
 
 
-def score_all(df: pd.DataFrame) -> pd.DataFrame:
+def score_all(df: pd.DataFrame, dim_weights: dict = None, indicators: dict = None,
+              veto_dim: str = None, primary_dim: str = None) -> pd.DataFrame:
+    """同类组内记分卡评分.
+    默认用主动权益配置(config.DIM_WEIGHTS/INDICATORS); 传入 dim_weights/indicators
+    可复用同一引擎评其它资产(如债基 config.BOND_*). 维度键须用 A/B/C/D/E 前缀。
+    """
+    dim_weights = dim_weights or config.DIM_WEIGHTS
+    indicators = indicators or config.INDICATORS
+    veto_dim = veto_dim or config.VETO_DIM
+    primary_dim = primary_dim or config.PRIMARY_DIM
     out = df.copy()
     dim_cols = []
-    for dim, w in config.DIM_WEIGHTS.items():
+    for dim, w in dim_weights.items():
         col = f"score_{dim}"
-        out[col] = score_dimension(df, dim)
+        out[col] = score_dimension(df, dim, indicators)
         dim_cols.append((col, w))
 
     # 综合分: 缺维度按剩余权重归一, 同时输出覆盖率与可信度标识(防止临时分冒充五维综合分)
@@ -92,12 +101,12 @@ def score_all(df: pd.DataFrame) -> pd.DataFrame:
     # 短板与否决
     score_cols = [c for c, _ in dim_cols]
     out["shortboard"] = (out[score_cols] < config.SHORTBOARD_PCTL).any(axis=1)
-    veto_col = f"score_{config.VETO_DIM}"
+    veto_col = f"score_{veto_dim}"
     out["veto"] = out[veto_col] < config.VETO_PCTL
 
     # 主维缺失否决: 收益维(A)整维算不出 -> 综合分只剩风险维, 会让低波动小基金虚高
     # 这类基金不得参与排名(标记 primary_missing), 单独成池
-    primary_col = f"score_{config.PRIMARY_DIM}"
+    primary_col = f"score_{primary_dim}"
     out["primary_missing"] = out[primary_col].isna()
     out.loc[out["primary_missing"], "veto"] = True
 
