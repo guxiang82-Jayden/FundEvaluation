@@ -207,7 +207,32 @@ def fund_meta(fund_code: str, verbose: bool = False) -> dict:
         if verbose:
             print(f"[warn] {fund_code} 资产配置 失败: {e}")
 
+    # 4) 费率(E1): 同花顺源 fund_info_ths 含 管理费/托管费
+    #    ⚠️ 字段名待本机实测核对(沙箱无 akshare 网络); 失败则 E1 留空降级
+    #    ⚠️ 性能: 每只额外一次网络调用, 全量会增耗时; 费率少变, 可改为一次性批量缓存(类 cdim)
+    #    若实测拖慢明显, 注释掉本段, 改用单独的 fee 缓存 CSV
+    try:
+        info = ak.fund_info_ths(symbol=fund_code)
+        kv = dict(zip(info.iloc[:, 0], info.iloc[:, 1])) if info.shape[1] >= 2 else {}
+        mgmt = _parse_pct(kv.get("管理费"))
+        cust = _parse_pct(kv.get("托管费"))
+        if mgmt is not None or cust is not None:
+            meta["total_fee"] = (mgmt or 0) + (cust or 0)
+    except Exception as e:  # noqa: BLE001
+        _warn(fund_code, "费率")
+        if verbose:
+            print(f"[warn] {fund_code} 费率 失败: {e}")
+
     return meta
+
+
+def _parse_pct(text) -> float | None:
+    """'0.50%' -> 0.005; None/'' -> None"""
+    if text is None:
+        return None
+    import re
+    m = re.search(r"([\d.]+)\s*%", str(text))
+    return float(m.group(1)) / 100 if m else None
 
 
 def _parse_scale_yi(text: str) -> float | None:
