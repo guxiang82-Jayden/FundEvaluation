@@ -55,6 +55,28 @@ def test_split_and_dual_track():
     print(f"  合并 {len(combined)} 只 | 记分卡分布 {combined['scorecard'].value_counts().to_dict()}")
 
 
+
+
+def test_excel_split_by_scorecard():
+    print("== Excel 固收+榜 分表测试 ==")
+    import openpyxl
+    main_board = pd.DataFrame({
+        "fund_code": [f"{i:06d}" for i in range(6)],
+        "composite_score": [80, 70, 60, 55, 50, 40],
+        "scorecard": ["BOND", "BOND", "BOND", "BOND_PLUS", "BOND_PLUS", "BOND(fallback)"],
+    })
+    micro_board = pd.DataFrame({"fund_code": ["900001"], "composite_score": [30],
+                                "scorecard": ["BOND"]})
+    df_all = pd.DataFrame({"fund_code": ["800001"], "screened_out": [True]})
+    out = "/sessions/keen-sharp-ptolemy/mnt/outputs/_score_bond_test.xlsx"
+    counts = rmb.write_score_workbook(out, main_board, micro_board, df_all)
+    wb = openpyxl.load_workbook(out)
+    assert set(wb.sheetnames) == {"纯债可投主榜", "固收+榜", "小微观察区", "剔除清单"}, wb.sheetnames
+    assert counts["纯债可投主榜"] == 3 and counts["固收+榜"] == 3, counts
+    print(f"  sheet={wb.sheetnames} | 行数={counts} ✓")
+
+
 if __name__ == "__main__":
     test_split_and_dual_track()
+    test_excel_split_by_scorecard()
     print("\n固收+ 分流骨架测试通过 ✅")

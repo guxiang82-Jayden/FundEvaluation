@@ -129,6 +129,29 @@ def score_plus_track(std_plus: pd.DataFrame, navs: dict = None,
     return scored
 
 
+def write_score_workbook(out_path: str, main_board: pd.DataFrame,
+                         micro_board: pd.DataFrame, df_all: pd.DataFrame) -> dict:
+    """按 scorecard 拆表输出: 纯债可投主榜 / 固收+榜 / 小微观察区 / 剔除清单。
+    无 scorecard 列时回退单张可投主榜。返回各 sheet 行数。"""
+    counts = {}
+    with pd.ExcelWriter(out_path) as xw:
+        if "scorecard" in main_board.columns:
+            bond_b = main_board[main_board["scorecard"] == "BOND"]
+            plus_b = main_board[main_board["scorecard"].isin(["BOND_PLUS", "BOND(fallback)"])]
+            bond_b.to_excel(xw, sheet_name="纯债可投主榜", index=False)
+            plus_b.to_excel(xw, sheet_name="固收+榜", index=False)
+            counts["纯债可投主榜"] = len(bond_b)
+            counts["固收+榜"] = len(plus_b)
+        else:
+            main_board.to_excel(xw, sheet_name="可投主榜", index=False)
+            counts["可投主榜"] = len(main_board)
+        micro_board.to_excel(xw, sheet_name="小微观察区", index=False)
+        df_all[df_all["screened_out"]].to_excel(xw, sheet_name="剔除清单", index=False)
+        counts["小微观察区"] = len(micro_board)
+        counts["剔除清单"] = int(df_all["screened_out"].sum())
+    return counts
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--asof", default=None, help="评估截止日 YYYY-MM-DD, 默认最新")
@@ -194,10 +217,7 @@ def main():
                              pd.Series(False, index=scored_sorted.index))
     main_board = scored_sorted[~warn.fillna(False)]
     micro_board = scored_sorted[warn.fillna(False)]
-    with pd.ExcelWriter(out_path) as xw:
-        main_board.to_excel(xw, sheet_name="可投主榜", index=False)
-        micro_board.to_excel(xw, sheet_name="小微观察区", index=False)
-        df[df["screened_out"]].to_excel(xw, sheet_name="剔除清单", index=False)
+    sheet_counts = write_score_workbook(out_path, main_board, micro_board, df)
 
     if not args.limit:
         import shutil
@@ -206,8 +226,13 @@ def main():
         shutil.copy(out_path, os.path.join(archive_dir, os.path.basename(out_path)))
         print(f"已归档 → archive/{os.path.basename(out_path)}")
 
-    print(f"输出: {out_path}")
-    print(f"可投主榜: {len(main_board)} | 小微观察区: {len(micro_board)}")
+    print(f"输出: {out_path}  sheets={sheet_counts}")
+    if "scorecard" in main_board.columns:
+        nb = int((main_board["scorecard"] == "BOND").sum())
+        npp = int(main_board["scorecard"].isin(["BOND_PLUS", "BOND(fallback)"]).sum())
+        print(f"纯债可投主榜: {nb} | 固收+榜: {npp} | 小微观察区: {len(micro_board)}")
+    else:
+        print(f"可投主榜: {len(main_board)} | 小微观察区: {len(micro_board)}")
     print(f"正式重点池: {scored['focus_pool'].sum()} 只 | "
           f"候选池(provisional): {scored.get('candidate_pool', pd.Series(dtype=bool)).sum()} 只")
 
