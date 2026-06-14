@@ -12,3 +12,6 @@ scripts/output/
 .DS_Store
 Thumbs.db
 ~$*.xlsx
+
+# 会话内临时中间文件(C维取数)
+scripts/data/_*.json

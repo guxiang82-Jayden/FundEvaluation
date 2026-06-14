@@ -10,6 +10,7 @@ from datetime import date
 import pandas as pd
 
 import campisi
+import cdim_bond
 import classify_bond
 import config
 import data_akshare as da
@@ -81,6 +82,7 @@ def main():
                       on="fund_code", how="right")
           .merge(mt, on="fund_code", how="inner"))
     df = derive_de_columns(df)
+    df = cdim_bond.load_cdim_bond(df)   # C维(信用/久期/杠杆)+排雷/杠杆筛
 
     print("== L1 债基初筛 ==")
     df = screening_bond.apply_screening_bond(df)
