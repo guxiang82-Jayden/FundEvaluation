@@ -29,6 +29,9 @@ BOND1_SUBGROUPS = {"混合债券一级"}                  # -> BOND1 一级债
 PLUS_SUBGROUPS = {"混合债券二级", "偏债混合/固收+"}  # -> PLUS 固收+(权益中枢分档)
 CB_SUBGROUPS = {"可转债基金"}                        # -> CB 可转债(待专用卡)
 MIN_GROUP = 5   # 同类组内可评分最小样本; 不足则 defer(不跨异质组回退)
+# universe 类型正则: QDII 仅纳"含债"子类(P0修复: 原 bare QDII 错纳股票/商品/另类 75.8%)
+BOND_TYPE_RE = r"债券型|混合型-偏债|指数型-固收|QDII.*债"
+BOND_INDEX_TYPE_RE = r"指数型-固收|QDII.*债"  # 工具型/海外单列 track
 
 
 def bond_universe() -> pd.DataFrame:
@@ -38,8 +41,7 @@ def bond_universe() -> pd.DataFrame:
     u = ak.fund_name_em().rename(columns={
         "基金代码": "fund_code", "基金简称": "fund_name", "基金类型": "fund_type"})
     u["fund_code"] = u["fund_code"].astype(str).str.zfill(6)
-    mask = u["fund_type"].fillna("").str.contains(
-        r"债券型|混合型-偏债|指数型-固收|QDII", regex=True)
+    mask = u["fund_type"].fillna("").str.contains(BOND_TYPE_RE, regex=True)
     u = u[mask].copy()
     # 先排除同业存单等特殊策略(后续再细分)
     u = u[~u["fund_name"].fillna("").str.contains("同业存单", regex=False)]
@@ -57,7 +59,7 @@ def assign_track(df: pd.DataFrame) -> pd.DataFrame:
     track[sg.isin(PLUS_SUBGROUPS)] = "PLUS"
     track[sg.isin(CB_SUBGROUPS)] = "CB"
     # 工具型/海外优先(覆盖 subgroup 误判: 指数固收常按名落入纯债子组)
-    track[ft.str.contains(r"指数型-固收|QDII", regex=True)] = "BOND_INDEX"
+    track[ft.str.contains(BOND_INDEX_TYPE_RE, regex=True)] = "BOND_INDEX"
     out["track"] = track
     return out
 
@@ -146,10 +148,26 @@ def score_plus_track(std_plus: pd.DataFrame, navs: dict = None,
     return scored
 
 
+def score_cb_track(std_cb: pd.DataFrame, navs: dict = None,
+                   equity_index_ret: pd.Series = None) -> pd.DataFrame:
+    """可转债 track: scoring_bond_cb(权益beta+转债仓位+风控, v0先验)。<MIN_GROUP defer。"""
+    if std_cb.empty:
+        return pd.DataFrame()
+    try:
+        import scoring_bond_cb
+    except ImportError:
+        return pd.DataFrame()
+    df = std_cb.copy()
+    if navs and hasattr(scoring_bond_cb, "build_cb_metrics"):
+        df = scoring_bond_cb.build_cb_metrics(df, navs, equity_index_ret)
+    return scoring_bond_cb.score_cb(df)  # 已 tag scorecard="CB"
+
+
 # scorecard -> Excel sheet 名
 _SHEET_MAP = {
     "BOND": "纯债主榜", "BOND1": "一级债榜",
     "BOND_PLUS": "固收+榜", "BOND(fallback)": "固收+榜",
+    "CB": "可转债榜",
 }
 
 
@@ -247,6 +265,7 @@ def main():
         score_subgroups(standard[standard["track"] == "BOND1"],
                         config.BOND_DIM_WEIGHTS, config.BOND_INDICATORS, "BOND1"),
         score_plus_track(standard[standard["track"] == "PLUS"], navs, equity_index_ret),
+        score_cb_track(standard[standard["track"] == "CB"], navs, equity_index_ret),
     ]
     parts = [p for p in parts if not p.empty]
     scored = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
