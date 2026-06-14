@@ -1,0 +1,31 @@
+Campisi ChinaBond data-layer verification
+Date: 2026-06-14
+AKShare: 1.18.64
+Fund: 000186 华泰柏瑞季季红A
+
+Available weekly index series:
+- 中债国债总财富: 2002-01-11 -> 2026-06-12, 1251 rows
+- 中债中短期: 2002-01-11 -> 2026-06-12, 1251 rows
+- 中债长期: 2002-01-11 -> 2026-06-12, 1251 rows
+- 中债企业债AAA: 2007-01-12 -> 2026-06-12, 996 rows
+- 中债国开债: 2002-01-11 -> 2026-06-12, 1251 rows
+- 中债高收益企业债: 2007-01-12 -> 2026-06-12, 996 rows
+
+Constructed factors: level, slope, credit, default
+Convertible factor omitted: ChinaBond available-index catalog has no
+convertible-bond index; no non-ChinaBond substitute was used.
+
+End-to-end regression:
+- observations: 638
+- R2: 0.6118
+- annualized alpha: 0.89%
+- confidence: medium
+- betas:
+  level: 0.5864
+  slope: 0.0460
+  credit: 0.4983
+  default: 0.0408
+
+Network note:
+Historical ChinaBond requests were verified through the machine's existing
+HTTP(S) proxy. data_bond.py does not hard-code proxy settings.
