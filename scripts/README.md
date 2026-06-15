@@ -15,7 +15,49 @@ run_monthly.py   月度跑批入口 → output/score_*.xlsx(评分/观察池/剔
 test_engine.py   合成数据测试(已通过 2026-06-11)
 ```
 
+## 固收线架构(v0.4,2026-06-14 建成,测试全绿)
+
+```
+classify_bond.py      L0 债基/固收+分类(AKShare 类型映射 + 可转债按名识别)
+screening_bond.py     L1 债基负面初筛(独立于权益线, 缺列跳过对应规则)
+metrics_bond.py       债基指标层(净值风控 + Campisi 净值法 alpha + 持续性, 数据源无关)
+campisi.py            净值法 Campisi 五因子归因(久期中性正交, 残差=alpha)
+data_bond.py          AKShare 中债财富指数取数层(Campisi 因子, 用户机)
+cdim_bond.py          C 维债基数据合并层(且慢 MCP 拉取存 CSV → data/cdim_bond_data.csv)
+scoring_bond_plus.py  固收+评分(按权益中枢分档, 组内分位)
+scoring_bond_cb.py    可转债专用记分卡(v0 先验, 组内≥5 评分, 待 RankIC 校准)
+run_monthly_bond.py   债基月度跑批主入口(L0→L1→指标→4-Track 评分→Excel)
+                      4-Track: 纯债 / 一级债 / 固收+ / 可转债CB(+ 指数固收/QDII工具型单列观察)
+```
+
+## v1.0 闭环工具(2026-06-14 建成, 测试全绿)
+
+```
+review.py             滚动复盘机制(复盘四问: 命中率/误杀漏放/RankIC/可比性break → 季度报告)
+backtest.py           回测引擎(T期评分→T+1组内超额; 分维度/分窗口 RankIC; 严格防前视)
+run_backtest.py       回测驱动(权益线滚动 RankIC + 权重校准报告; 样本受限待扩)
+```
+
 **设计要点**:MCP(且慢/iFinD)只有 Claude 会话能调用,不进脚本依赖;脚本主干 AKShare 可独立调度,MCP 数据用于会话内交叉校验与深研。引擎吃 DataFrame,换数据源不动核心逻辑。
+
+## 测试清单(12 套, 2026-06-15 复跑全绿, 合成/离线无网络)
+
+| 测试文件 | 覆盖范围 |
+|---|---|
+| test_engine.py | 权益线指标计算 + 初筛/评分流水线(v0.1 主自检) |
+| test_modules.py | rbsa.py 风格分析 / backtest.py 引擎 |
+| test_classify_bond.py | 债基 L0 分类器 |
+| test_screening_bond.py | 债基 L1 初筛模块 |
+| test_bond_pipeline.py | 债基固收线端到端: 分类→指标→初筛→score_all(BOND) |
+| test_cdim_bond.py | C 维加载层 + 生效(用真实 cdim_bond_data.csv) |
+| test_campisi.py | campisi.py 净值五因子归因 |
+| test_scoring_bond_plus.py | 固收+ 记分卡 |
+| test_scoring_bond_cb.py | 可转债 CB 专用记分卡 |
+| test_bond_tracks.py | 4-Track 路由 + 评分 + Excel 分表 |
+| test_review.py | review.py 双线复盘四问机制 |
+| test_backtest.py | 分维度/分窗口 RankIC 多期聚合 |
+
+运行(在 scripts/ 下): `python test_<名>.py`,各自独立、无网络依赖。
 
 ## 运行
 

@@ -3,7 +3,7 @@
 4-Track(2026-06-14 真跑质检后重定义):
   BOND(纯债: 短期/中长期纯债, 组内分位) / BOND1(一级债: 混合债券一级)
   PLUS(固收+: 混合二级/偏债, 权益中枢分档, scoring_bond_plus)
-  CB(可转债, 待专用卡) / BOND_INDEX(指数型-固收/QDII工具型, 待工具卡) -> 暂不评分, 单列观察
+  CB(可转债: scoring_bond_cb 专用卡, 组内>=5 评分) / BOND_INDEX(指数型-固收/QDII工具型, 待工具卡 -> 暂不评分单列观察)
 依赖 akshare(用户机); 沙箱无网络, 用 test_bond_pipeline.py / test_bond_tracks.py 跑合成数据。
 """
 import argparse
@@ -27,7 +27,7 @@ import screening_bond
 PURE_SUBGROUPS = {"短期纯债", "中长期纯债"}        # -> BOND 纯债(组内分位)
 BOND1_SUBGROUPS = {"混合债券一级"}                  # -> BOND1 一级债
 PLUS_SUBGROUPS = {"混合债券二级", "偏债混合/固收+"}  # -> PLUS 固收+(权益中枢分档)
-CB_SUBGROUPS = {"可转债基金"}                        # -> CB 可转债(待专用卡)
+CB_SUBGROUPS = {"可转债基金"}                        # -> CB 可转债(scoring_bond_cb 专用卡, v0先验)
 MIN_GROUP = 5   # 同类组内可评分最小样本; 不足则 defer(不跨异质组回退)
 # universe 类型正则: QDII 仅纳"含债"子类(P0修复: 原 bare QDII 错纳股票/商品/另类 75.8%)
 BOND_TYPE_RE = r"债券型|混合型-偏债|指数型-固收|QDII.*债"
