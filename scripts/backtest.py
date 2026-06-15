@@ -229,9 +229,12 @@ def calibration_suggest(summary_df: pd.DataFrame) -> dict:
     for dim, cur_w in config.DIM_WEIGHTS.items():
         ic_key = f"ic_{dim}"
         ic_val = ic_map.get(ic_key, np.nan)
-        if np.isnan(ic_val) or total_pos_ic == 0:
+        if np.isnan(ic_val):
             suggested = cur_w
             note = "无IC数据, 保持原权重"
+        elif total_pos_ic == 0:
+            suggested = cur_w
+            note = "各维IC≤0, 暂不调权(非缺数据)"
         else:
             suggested = round(max(ic_val, 0) / total_pos_ic, 3) if total_pos_ic > 0 else cur_w
             delta = suggested - cur_w

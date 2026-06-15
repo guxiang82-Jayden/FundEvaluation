@@ -195,6 +195,50 @@ def test_no_future_data_in_score():
     print("  asof 切片一致性 ✓")
 
 
+
+
+def test_calibration_note_distinction():
+    """calibration_suggest: 区分'各维IC≤0'与'无IC数据'(任务26报告修复)"""
+    import backtest as bt
+    neg = pd.DataFrame({"metric": ["ic_A_return", "ic_B_risk", "ic_C_attribution",
+                                    "ic_D_manager", "ic_E_operation"],
+                        "mean_ic": [-0.10, -0.05, -0.02, -0.03, -0.01],
+                        "current_weight": [0.30, 0.25, 0.20, 0.15, 0.10]})
+    sug = bt.calibration_suggest(neg)
+    assert any("IC≤0" in v["note"] for v in sug.values()), sug
+    nan = pd.DataFrame({"metric": ["ic_A_return"], "mean_ic": [float("nan")],
+                        "current_weight": [0.30]})
+    assert "无IC数据" in bt.calibration_suggest(nan)["A_return"]["note"]
+    print("  calibration note 区分(各维IC≤0 vs 无数据) OK")
+
+
+def test_load_navs_diag():
+    """_load_navs: 去2014硬门槛 + 失败/历史太短/有效 分桶诊断(任务26核心)"""
+    import run_backtest as rb
+    idx_old = pd.bdate_range("2015-01-01", periods=2000)
+    idx_new = pd.bdate_range("2023-01-01", periods=400)
+
+    def fake_nav(code):
+        if code == "FAIL":
+            raise ValueError("html反爬")
+        if code == "EMPTY":
+            return pd.Series(dtype=float)
+        if code == "NEW":
+            return pd.Series(1.0, index=idx_new)
+        return pd.Series(1.0, index=idx_old)
+
+    orig = rb.da.fund_nav
+    rb.da.fund_nav = fake_nav
+    try:
+        navs, diag = rb._load_navs(["OLD1", "OLD2", "NEW", "FAIL", "EMPTY"],
+                                   pd.Timestamp("2021-12-31"))
+    finally:
+        rb.da.fund_nav = orig
+    assert diag == {"requested": 5, "fetch_fail": 2, "too_short": 1, "valid": 2}, diag
+    assert set(navs) == {"OLD1", "OLD2"}
+    print(f"  _load_navs 分桶诊断 {diag} OK")
+
+
 if __name__ == "__main__":
     test_forward_return()
     test_anti_lookahead()
@@ -202,4 +246,6 @@ if __name__ == "__main__":
     test_dim_ic_structure()
     test_multi_period()
     test_no_future_data_in_score()
+    test_calibration_note_distinction()
+    test_load_navs_diag()
     print("\n全部回测测试通过 ✅")

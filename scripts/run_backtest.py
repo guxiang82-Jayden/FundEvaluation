@@ -25,21 +25,32 @@ import data_akshare as da
 # 辅助
 # ---------------------------------------------------------------------------
 
-def _load_navs(codes: list, asof_min: str = "2014-01-01") -> dict:
-    """批量加载净值, 失败跳过; 只保留有 2014 年以前数据的基金"""
+def _load_navs(codes: list, history_cutoff) -> tuple:
+    """批量加载净值 + 失败原因分桶诊断(P0修复: 原写死2014门槛错杀大量基金)。
+    history_cutoff: 基金净值起点须 <= 此日期, 才能至少覆盖一个回测期的窗口;
+    更早 asof 由 backtest_one_period 内 valid_3y/inception 逐期把关。
+    返回 (navs dict, diag dict)。"""
+    cutoff = pd.Timestamp(history_cutoff)
     navs = {}
+    diag = {"requested": len(codes), "fetch_fail": 0, "too_short": 0, "valid": 0}
     n = len(codes)
     for i, code in enumerate(codes):
         try:
             nav = da.fund_nav(code)
-            if nav.empty or nav.index.min() > pd.Timestamp(asof_min):
-                continue          # 历史不够长, 滚动回测无意义
-            navs[code] = nav
-        except Exception as e:    # noqa: BLE001
-            pass
+        except Exception:         # noqa: BLE001
+            diag["fetch_fail"] += 1
+            continue
+        if nav is None or len(nav) == 0:
+            diag["fetch_fail"] += 1
+            continue
+        if nav.index.min() > cutoff:
+            diag["too_short"] += 1
+            continue
+        navs[code] = nav
         if (i + 1) % 50 == 0:
             print(f"  净值加载 {i+1}/{n} (有效 {len(navs)})", flush=True)
-    return navs
+    diag["valid"] = len(navs)
+    return navs, diag
 
 
 def _load_inception_dates(meta: pd.DataFrame) -> dict:
@@ -56,6 +67,7 @@ def _write_report(
     out_path: str,
     n_universe: int,
     asof_list: list,
+    diag: dict = None,
 ):
     lines = [
         "# 回测校准报告 — 主动权益评分权重",
@@ -68,6 +80,12 @@ def _write_report(
         "本次回测**仅使用净值可算的 A/B 维指标**, C/D/E 维含持仓/经理等数据"
         "须对齐披露滞后, 本版暂不纳入。C/D/E 维权重建议仅供参考, 应在获得足够历史"
         "快照后单独校准。",
+        "",
+        "## 数据诊断(样本构造, P0修复后)",
+        "",
+        (f"- 请求 {diag['requested']} / 抓取失败 {diag['fetch_fail']} / "
+         f"历史太短(成立晚)被筛 {diag['too_short']} / **最终有效 {diag['valid']}**"
+         if diag else "- (无诊断数据)"),
         "",
         "## 1. 多期滚动总览",
         "",
@@ -179,10 +197,14 @@ def _write_report(
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=300, help="取规模前 N 只基金")
+    ap.add_argument("--asof-start", type=int, default=2019, help="最早评估年(年末)")
+    ap.add_argument("--asof-end", type=int, default=2024, help="最晚评估年(年末)")
+    ap.add_argument("--min-history-years", type=int, default=3, help="评分窗口所需最短历史(年)")
     ap.add_argument("--out", default="data/backtest_calibration_report.md", help="报告路径")
     args = ap.parse_args()
 
-    asof_list = [f"{y}-12-31" for y in range(2019, 2025)]  # 2019–2024 年末
+    asof_list = [f"{y}-12-31" for y in range(args.asof_start, args.asof_end + 1)]
+    load_cutoff = pd.Timestamp(f"{args.asof_end}-12-31") - pd.DateOffset(years=args.min_history_years)
 
     print("== 获取主动权益全量 ==")
     funds = da.active_equity_universe()
@@ -191,11 +213,12 @@ def main():
     if "scale_yi" in meta.columns:
         meta = meta.sort_values("scale_yi", ascending=False)
     codes = meta["fund_code"].tolist()[:args.limit]
-    print(f"目标基金: {len(codes)} 只")
+    print(f"目标基金: {len(codes)} 只 | 历史门槛: 净值起点需 ≤ {load_cutoff.date()}")
 
     print("== 批量加载净值(约需 2–5 分钟) ==")
-    navs = _load_navs(codes, asof_min="2014-01-01")
-    print(f"有效净值: {len(navs)} 只")
+    navs, diag = _load_navs(codes, load_cutoff)
+    print(f"  数据诊断: 请求{diag['requested']} / 抓取失败{diag['fetch_fail']} / "
+          f"历史太短{diag['too_short']} / 有效{diag['valid']}")
 
     print("== 加载基准行情 ==")
     index_rets = da.load_all_index_returns_v2()
@@ -223,7 +246,7 @@ def main():
     for dim, info in suggestions.items():
         print(f"  {dim}: {info['current']:.0%} → {info['suggested']:.0%}  ({info['note']})")
 
-    _write_report(results, summary, suggestions, args.out, len(navs), asof_list)
+    _write_report(results, summary, suggestions, args.out, len(navs), asof_list, diag=diag)
 
 
 if __name__ == "__main__":
