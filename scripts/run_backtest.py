@@ -232,9 +232,12 @@ def main():
         import classify
         ep = (meta.set_index("fund_code")["equity_position"]
               if "equity_position" in meta.columns else None)
-        cls = classify.classify(meta, equity_position=ep)
-        subgroups = dict(zip(cls["fund_code"], cls["backbone"]))
-        print(f"  同类组(backbone)分布: {pd.Series(subgroups).value_counts().to_dict()}")
+        # 用 funds(含 fund_type/fund_name)分类; meta 无 fund_type
+        cls = classify.classify(funds, equity_position=ep)
+        # 用 subgroup(行业主题+backbone)隔离板块差异; 组内<5只在 backtest 内跳过
+        subgroups = dict(zip(cls["fund_code"], cls["subgroup"]))
+        top = pd.Series(subgroups).value_counts().head(8).to_dict()
+        print(f"  同类组(subgroup)Top8: {top}")
     except Exception as e:  # noqa: BLE001
         print(f"[warn] 分类失败, 退回全市场打分: {e}")
         subgroups = None
