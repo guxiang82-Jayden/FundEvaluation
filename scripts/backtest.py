@@ -99,8 +99,16 @@ def backtest_one_period(
     if len(df) < 10:
         return {"asof": asof, "error": f"样本不足({len(df)})"}
 
-    # 评分 (回测只用净值可算的 A/B 维; C/D/E 无历史持仓 → 自动 provisional)
-    scored = scoring.score_all(df)
+    # 评分: 同类组内分位(匹配生产口径, 不再全市场混排); 组内<5只跳过。
+    # subgroups=None 时全部落入 "__all__" 单组, 退化为全市场(向后兼容)。
+    scored_parts = []
+    for _g, _gdf in df.groupby("subgroup"):
+        if len(_gdf) < 5:
+            continue
+        scored_parts.append(scoring.score_all(_gdf))
+    if not scored_parts:
+        return {"asof": asof, "error": "组内样本不足(各组<5)"}
+    scored = pd.concat(scored_parts, ignore_index=True)
 
     # 前瞻收益 & 组内超额
     scored["fwd_return"] = scored["fund_code"].map(

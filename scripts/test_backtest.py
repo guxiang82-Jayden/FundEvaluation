@@ -239,6 +239,30 @@ def test_load_navs_diag():
     print(f"  _load_navs 分桶诊断 {diag} OK")
 
 
+
+
+def test_within_subgroup_scoring():
+    """组内分位打分(精化): 传 subgroups 时按组打分, 两组各6只均参与。"""
+    import backtest as bt
+    idx = pd.bdate_range("2016-01-01", periods=2200)
+    rng = np.random.default_rng(5)
+    navs, subs, inc = {}, {}, {}
+    for g, base in [("普通股票型", 0.0005), ("偏股混合型", 0.0002)]:
+        for i in range(6):
+            c = f"{g[:2]}{i}"
+            navs[c] = pd.Series((1 + pd.Series(rng.normal(base, 0.01, 2200),
+                                               index=idx)).cumprod(), index=idx)
+            subs[c] = g
+            inc[c] = idx[0]
+    bench = pd.Series(rng.normal(0.0003, 0.01, 2200), index=idx)
+    res = bt.backtest_one_period(navs, bench, "2021-12-31",
+                                 subgroups=subs, inception_dates=inc)
+    assert "error" not in res, res
+    assert res["n_universe"] == 12, res  # 两组各6只均评分
+    assert "rank_ic" in res
+    print(f"  组内打分: n={res['n_universe']}, rank_ic={res['rank_ic']:.3f} ✓")
+
+
 if __name__ == "__main__":
     test_forward_return()
     test_anti_lookahead()
@@ -248,4 +272,5 @@ if __name__ == "__main__":
     test_no_future_data_in_score()
     test_calibration_note_distinction()
     test_load_navs_diag()
+    test_within_subgroup_scoring()
     print("\n全部回测测试通过 ✅")

@@ -77,6 +77,7 @@ def _write_report(
         f"> 前瞻窗口: 12 个月  ",
         "",
         "## ⚠️ 限制说明",
+        "评分口径: **同类组(backbone)内分位**(匹配生产); IC 对组内前瞻超额。",
         "本次回测**仅使用净值可算的 A/B 维指标**, C/D/E 维含持仓/经理等数据"
         "须对齐披露滞后, 本版暂不纳入。C/D/E 维权重建议仅供参考, 应在获得足够历史"
         "快照后单独校准。",
@@ -226,12 +227,25 @@ def main():
 
     inception_dates = _load_inception_dates(meta)
 
-    print("== 滚动回测 ==")
+    # 同类组分类(backbone 粗组, 历史样本更稳): 让回测按生产口径"组内分位打分"
+    try:
+        import classify
+        ep = (meta.set_index("fund_code")["equity_position"]
+              if "equity_position" in meta.columns else None)
+        cls = classify.classify(meta, equity_position=ep)
+        subgroups = dict(zip(cls["fund_code"], cls["backbone"]))
+        print(f"  同类组(backbone)分布: {pd.Series(subgroups).value_counts().to_dict()}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] 分类失败, 退回全市场打分: {e}")
+        subgroups = None
+
+    print("== 滚动回测(同类组内打分) ==")
     results = bt.backtest_multi_period(
         navs=navs,
         bench_ret=bench_ret,
         asof_list=asof_list,
         top_pct=0.2,
+        subgroups=subgroups,
         inception_dates=inception_dates,
     )
 
