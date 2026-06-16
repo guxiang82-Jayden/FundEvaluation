@@ -114,9 +114,10 @@ BOND_INDICATORS = {
         "sortino": (0.15, 1),                  # B3 下行风险
         "monthly_positive_ratio": (0.15, 1),   # B5 月度正收益占比(绝对收益体验)
     },
-    "C_attribution": {                          # C 维: 待且慢债基持仓工具接入
-        "selection_share_bond": (0.35, 1),     # C1 Campisi 择券占超额比
-        "credit_sink": (0.30, 0),              # C2 信用下沉度(U型: 适度为佳)
+    "C_attribution": {                          # C 维: v0先验, 待 Jayden 校准/回测
+        "selection_share_bond": (0.20, 1),     # C1a 净值法 Campisi 残差择券代理
+        "pick_alpha_bond": (0.20, 1),          # C1b 持仓法 Campisi pickEffect, 与净值法互补
+        "credit_sink": (0.25, 0),              # C2 信用下沉度(U型: 适度为佳)
         "duration_dev": (0.20, 0),             # C3 久期偏离(U型)
         "leverage_contrib": (0.15, 1),         # C4 杠杆套息贡献
     },

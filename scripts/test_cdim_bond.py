@@ -57,6 +57,62 @@ def test_cdim_bond_loader_and_coverage():
     print(f"  综合分范围 [{scored['composite_score'].min():.1f}, {scored['composite_score'].max():.1f}]")
 
 
+def test_pick_effect_data_gated(tmp_path=None):
+    print("== pick_effect -> pick_alpha_bond data-gated 测试 ==")
+    import tempfile
+    rng = np.random.default_rng(32)
+    codes = [f"{i:06d}" for i in range(6)]
+    base = pd.DataFrame({
+        "fund_code": codes,
+        "bond_subgroup": "中长期纯债",
+        "campisi_alpha": rng.normal(0.01, 0.001, 6),
+        "ann_return_3y": rng.normal(0.03, 0.001, 6),
+        "cpr_persistence": rng.uniform(1, 2, 6),
+        "calmar_3y": rng.uniform(2, 3, 6),
+        "max_drawdown_3y": -rng.uniform(0.01, 0.02, 6),
+        "recovery_days_3y": rng.integers(20, 40, 6),
+        "sortino_3y": rng.uniform(1, 2, 6),
+        "monthly_positive_ratio_3y": rng.uniform(0.7, 0.9, 6),
+        "selection_share_bond": 0.2,
+        "manager_experience": 5.0,
+        "management_load": 100.0,
+        "total_fee": 0.004,
+        "scale_yi": 30.0,
+        "valid_3y": True,
+    })
+    cdim = pd.DataFrame({
+        "fund_code": codes,
+        "credit_ratio": 0.4,
+        "dur_sensitive": 3.0,
+        "leverage_ratio": 1.1,
+        "pick_effect": [-0.8, -0.4, -0.1, 0.1, 0.4, 0.8],
+    })
+    old_path = cdim_bond.CDIM_BOND_CSV
+    with tempfile.TemporaryDirectory() as d:
+        path = f"{d}/cdim_bond_data.csv"
+        cdim.to_csv(path, index=False)
+        cdim_bond.CDIM_BOND_CSV = path
+        merged = cdim_bond.load_cdim_bond(base)
+        assert "pick_alpha_bond" in merged.columns
+        scored = scoring.score_all(
+            merged, dim_weights=config.BOND_DIM_WEIGHTS,
+            indicators=config.BOND_INDICATORS, veto_dim="B_risk", primary_dim="A_return")
+        ranked = scored.sort_values("pick_alpha_bond")
+        assert ranked.iloc[0]["score_C_attribution"] < ranked.iloc[-1]["score_C_attribution"]
+
+        no_pick = cdim.drop(columns=["pick_effect"])
+        no_pick.to_csv(path, index=False)
+        merged2 = cdim_bond.load_cdim_bond(base)
+        assert "pick_alpha_bond" not in merged2.columns
+        scored2 = scoring.score_all(
+            merged2, dim_weights=config.BOND_DIM_WEIGHTS,
+            indicators=config.BOND_INDICATORS, veto_dim="B_risk", primary_dim="A_return")
+        assert scored2["score_C_attribution"].notna().any()
+    cdim_bond.CDIM_BOND_CSV = old_path
+    print("  pick_effect 有则纳入; 缺列则优雅降级 OK")
+
+
 if __name__ == "__main__":
     test_cdim_bond_loader_and_coverage()
+    test_pick_effect_data_gated()
     print("\ncdim_bond C维接入测试通过 ✅")

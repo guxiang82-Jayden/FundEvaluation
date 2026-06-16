@@ -6,8 +6,9 @@ keyword,index_code,index_name,index_mainstream,return_source,note
 农发债|农发行,,中债农发行债券指数族,0.6,pending,需按久期段/总指数取真实序列
 进出口行,,中债进出口行债券指数族,0.6,pending,需按久期段取真实序列
 国债,,中债国债指数族,0.6,pending,需按久期段取真实序列
-同业存单AAA|同业存单,,中证同业存单AAA指数,0.8,pending,当前取数层无中证同业存单收益
-上清所.*短融|短融,,上清所短融债券指数,0.6,pending,当前取数层无上清所指数收益
+同业存单AAA|同业存单,931059.CSI,中证同业存单AAA指数,0.8,data_akshare.index_returns(931059.CSI),Phase C 已接中证官网历史行情
+中证综合债|综合债指数,H11009.CSI,中证综合债指数,0.9,data_akshare.index_returns(H11009.CSI),Phase C 已接中证官网历史行情
+上清所.*短融|短融,H11014.CSI,中证短融指数,0.6,data_akshare.index_returns(H11014.CSI),Phase C 已接中证官网历史行情; 名称含上清所短融暂用中证短融 gate
 信用债|中高等级信用|投资级信用,,信用债指数族,0.5,pending,细分信用/区域/评级差异较大
 地方债|京津冀|安徽|广西|山东|长三角|粤港澳|气候|绿色|碳中和|ESG|科创,,区域/主题/绿色债券指数族,0.35,pending,"小众或主题指数, 待逐条确认"
 QDII|美元|全球|亚太|海外|亚洲,,海外债/QDII债券基准,0.3,pending,当前取数层无海外债基准与汇率处理

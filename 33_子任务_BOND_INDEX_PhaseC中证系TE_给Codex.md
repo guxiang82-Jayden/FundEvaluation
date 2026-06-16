@@ -29,3 +29,12 @@
 - ✅ 验证/扩展 akshare 取中证指数 + 回填 index_map 中证系 + 重算TE + gate 校验
 - ❌ 不碰中债系 CBA 代码(待官方字典);不猜代码;不改评分逻辑;不 push
 - 参考:`data/index_code_phasec_csi.csv`、`build_index_navs.py`、`scoring_bond_index.py`、`data/index_map_bond_te_check.md`(31b 的 TE 自检范式)
+
+✅ 已完成 2026-06-17
+
+Codex 回写:
+- `data_akshare.index_returns` 已扩展中证官网历史行情接口 `ak.stock_zh_index_hist_csindex`, 支持 `931059.CSI/H11009.CSI/H11014.CSI` 与裸代码。
+- `index_map_bond.csv` 已回填中证系: 同业存单AAA 104 只保留 `931059.CSI`; 中证综合债 1 只保留 `H11009.CSI`; 中证短融 5 只保留 `H11014.CSI`。
+- TE gate: 同业存单AAA min=0.000937, median=0.001493, max=0.005310; 其中 2 只 >0.5% 已撤回 `index_code` 保持 provisional。中证综合债 TE=0.009709; 中证短融 min=0.001476, median=0.002609, max=0.003527。
+- 当前保留中证系 `index_code` 合计 110 只; `build_index_navs.py` 实测 `index_map rows=756 mapped=110 returns=3`。
+- 详见 `data/index_map_bond_phasec_te_check.md`; 原始明细见 `data/index_map_bond_phasec_te_raw.csv`。

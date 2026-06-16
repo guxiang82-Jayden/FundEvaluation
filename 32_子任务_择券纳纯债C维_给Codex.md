@@ -33,3 +33,11 @@
 - ✅ 只改 cdim_bond.py(加载)+ config.py(BOND_INDICATORS C 维)+ 测试;data-gated
 - ❌ 不改 scoring.py/metrics_bond.py;不动 C 维总权重;不调用且慢 MCP(数据由主线会话内提供);不 push
 - 参考:`cdim_bond.py`(C 维派生模式)、`config.py` BOND_INDICATORS、`research/基金评估-CB权重审核_v0校准`(同款"维持先验+待校准"纪律)、固收 L3 总览
+
+✅ 已完成 2026-06-17
+
+Codex 回写:
+- `cdim_bond.load_cdim_bond` 已支持可选 `pick_effect` -> `pick_alpha_bond`, 缺列时不产生该列并优雅降级。
+- `BOND_INDICATORS["C_attribution"]` 已调整为: `selection_share_bond 0.20 / pick_alpha_bond 0.20 / credit_sink 0.25 / duration_dev 0.20 / leverage_contrib 0.15`; `BOND_DIM_WEIGHTS` 未改。
+- 已补 `test_pick_effect_data_gated`: 验证负择券 C 维更低、无 `pick_effect` 时不报错。
+- 已跑 `test_cdim_bond.py`、`test_bond_pipeline.py`、`test_engine.py` 通过。

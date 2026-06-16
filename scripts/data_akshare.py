@@ -108,9 +108,26 @@ def fund_nav(fund_code: str) -> pd.Series:
 
 
 # ---------- 指数行情(基准合成用) ----------
+def _normalize_csi_code(code: str) -> str | None:
+    raw = str(code).strip()
+    upper = raw.upper()
+    if upper.endswith(".CSI"):
+        upper = upper[:-4]
+    if upper.startswith("CSI"):
+        upper = upper[3:]
+    if upper.startswith("H") or (upper.isdigit() and len(upper) == 6):
+        return upper
+    return None
+
+
 def index_returns(code: str) -> pd.Series:
-    """指数日收益. 股票指数(sh/sz前缀)走新浪; 中债指数(CBA前缀)走中债综合指数
+    """指数日收益.
+
+    股票指数(sh/sz前缀)走新浪; 中债指数(CBA前缀)走中债综合指数;
+    中证系(931059.CSI/H11009.CSI/H11014.CSI 等)走中证官网历史行情。
     港股通综指暂无源, 基准含其成分时按剩余权重归一(benchmark.resolve_components 已处理)"""
+    code = str(code).strip()
+
     def fetch():
         if code.startswith("CBA"):
             try:
@@ -118,6 +135,13 @@ def index_returns(code: str) -> pd.Series:
             except Exception:
                 df = ak.bond_composite_index_cbond(indicator="财富", period="总值")
             df = df.rename(columns={"value": "close"})
+        elif _normalize_csi_code(code):
+            df = ak.stock_zh_index_hist_csindex(
+                symbol=_normalize_csi_code(code),
+                start_date="20040101",
+                end_date=datetime.now().strftime("%Y%m%d"),
+            )
+            df = df.rename(columns={"日期": "date", "收盘": "close"})
         else:
             df = ak.stock_zh_index_daily(symbol=code)
         df["date"] = pd.to_datetime(df["date"])
@@ -125,6 +149,41 @@ def index_returns(code: str) -> pd.Series:
     df = cached(f"index_{code}", fetch, max_age_days=1)
     s = df.set_index("date")["close"].astype(float).sort_index()
     return s.pct_change().dropna()
+
+
+def _pick_column(columns, candidates):
+    for c in candidates:
+        if c in columns:
+            return c
+    return None
+
+
+def fund_purchase_status() -> pd.DataFrame:
+    """全市场基金申赎状态表(一次拉取, 按基金代码缓存).
+
+    输出列与 screening_bond.mark_investability_bond 对齐:
+    fund_code / subscribe_status / redeem_status / next_open_date。
+    """
+    def fetch():
+        df = ak.fund_purchase_em()
+        code_col = _pick_column(df.columns, ["基金代码", "基金编码", "代码"])
+        if code_col is None:
+            raise ValueError("fund_purchase_em 缺少基金代码列")
+        sub_col = _pick_column(df.columns, ["申购状态", "购买状态", "认购状态"])
+        red_col = _pick_column(df.columns, ["赎回状态", "卖出状态"])
+        open_col = _pick_column(df.columns, ["下一开放日", "下一个开放日", "开放日"])
+
+        out = pd.DataFrame()
+        out["fund_code"] = df[code_col].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(6)
+        out["subscribe_status"] = df[sub_col].astype(str).str.strip() if sub_col else ""
+        out["redeem_status"] = df[red_col].astype(str).str.strip() if red_col else ""
+        if open_col:
+            out["next_open_date"] = pd.to_datetime(df[open_col], errors="coerce")
+        else:
+            out["next_open_date"] = pd.NaT
+        return out.drop_duplicates("fund_code", keep="first")
+
+    return cached("fund_purchase_status", fetch, max_age_days=1)
 
 
 def load_all_index_returns_v2() -> dict:
@@ -257,6 +316,35 @@ def _parse_scale_yi(text: str) -> float | None:
     return v
 
 
+def _merge_purchase_status(df: pd.DataFrame) -> pd.DataFrame:
+    """Merge subscribe/redeem status; source failure must not break monthly run."""
+    out = df.copy()
+    for col in ("subscribe_status", "redeem_status", "fund_status_text"):
+        if col not in out.columns:
+            out[col] = ""
+    try:
+        status = fund_purchase_status()
+        keep = [c for c in ["fund_code", "subscribe_status", "redeem_status", "next_open_date"]
+                if c in status.columns]
+        out = out.drop(columns=[c for c in keep if c != "fund_code" and c in out.columns],
+                       errors="ignore")
+        out = out.merge(status[keep], on="fund_code", how="left")
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] fund_purchase_status failed, investability status degraded: {e}")
+
+    for col in ("subscribe_status", "redeem_status"):
+        if col not in out.columns:
+            out[col] = ""
+        out[col] = out[col].fillna("").astype(str)
+    text = out["subscribe_status"] + " " + out["redeem_status"]
+    name_text = out.get("fund_name", pd.Series("", index=out.index)).fillna("").astype(str)
+    type_text = out.get("fund_type", pd.Series("", index=out.index)).fillna("").astype(str)
+    is_regular_open = (name_text + " " + type_text).str.contains("定期开放|定开", regex=True)
+    out["fund_status_text"] = np.where(is_regular_open, text + " 定期开放", text)
+    out["fund_status_text"] = pd.Series(out["fund_status_text"], index=out.index).fillna("").astype(str).str.strip()
+    return out
+
+
 def build_meta_table(fund_codes: list) -> pd.DataFrame:
     """批量元数据表(供 screening). 注意接口限频, 必要时加 sleep"""
     import time
@@ -288,4 +376,4 @@ def build_meta_table(fund_codes: list) -> pd.DataFrame:
         # 管理半径: 在管规模 × √产品数(一拖多稀释); 越大越差(scoring direction=-1)
         cnt = pd.to_numeric(df.get("manager_fund_count", 1), errors="coerce").fillna(1)
         df["management_load"] = pd.to_numeric(df["manager_total_aum"], errors="coerce") * np.sqrt(cnt)
-    return df
+    return _merge_purchase_status(df)
