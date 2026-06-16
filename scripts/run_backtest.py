@@ -77,7 +77,7 @@ def _write_report(
         f"> 前瞻窗口: 12 个月  ",
         "",
         "## ⚠️ 限制说明",
-        "评分口径: **同类组(backbone)内分位**(匹配生产); IC 对组内前瞻超额。",
+        "评分口径: **同类组(subgroup: 行业主题+backbone)内分位**(匹配生产); IC 对组内前瞻超额。",
         "本次回测**仅使用净值可算的 A/B 维指标**, C/D/E 维含持仓/经理等数据"
         "须对齐披露滞后, 本版暂不纳入。C/D/E 维权重建议仅供参考, 应在获得足够历史"
         "快照后单独校准。",
@@ -150,30 +150,35 @@ def _write_report(
                     bases.add(m[:-3])
         lines += ["", "**窗口胜负小结:**"]
         for base in sorted(bases):
-            r3 = summary[summary["metric"] == f"ic_{base}_3y"]["mean_ic"]
-            r5 = summary[summary["metric"] == f"ic_{base}_5y"]["mean_ic"]
+            # base 形如 "ic_sortino"(已含 ic_ 前缀); 直接拼窗口后缀查表。
+            r3 = summary[summary["metric"] == f"{base}_3y"]["mean_ic"]
+            r5 = summary[summary["metric"] == f"{base}_5y"]["mean_ic"]
             if r3.empty or r5.empty:
                 continue
             v3, v5 = r3.values[0], r5.values[0]
             winner = "5y更强" if v5 > v3 else "3y更强" if v3 > v5 else "相当"
-            lines.append(f"- `{base}`: 3y={v3:.4f}, 5y={v5:.4f} → **{winner}**")
+            name = base[3:] if base.startswith("ic_") else base
+            lines.append(f"- `{name}`: 3y={v3:.4f}, 5y={v5:.4f} → **{winner}**")
         lines.append("")
 
     # 权重校准建议
     lines += [
         "## 4. 维度权重校准建议",
         "",
-        "> 方法: 各维度正 IC 均值归一 → 建议权重; 仅 A/B 有 IC 证据, C/D/E 暂延用先验。",
+        "> 方法(显著性护栏): 仅当某维 IC 统计显著(|t|=|mean_ic|/(ic_std/√n)>=1)时才建议有界小步调整, "
+        "否则维持原权重; 永不清零。避免把统计上为零的 IC 归一成极端权重。仅 A/B 有 IC 证据, "
+        "C/D/E 暂延用先验。最终权重须人工复核并归一。",
         "",
-        "| 维度 | 当前权重 | 建议权重 | 变化 | 均值IC | 说明 |",
-        "|------|---------|---------|-----|--------|-----|",
+        "| 维度 | 当前权重 | 建议权重 | 变化 | 均值IC | t值 | 说明 |",
+        "|------|---------|---------|-----|--------|-----|-----|",
     ]
     for dim, info in suggestions.items():
         cur = f"{info['current']:.0%}"
         sug = f"{info['suggested']:.0%}"
         dlt = f"{info['delta']:+.0%}" if info["delta"] != 0 else "—"
         ic_s = f"{info['mean_ic']:.4f}" if info["mean_ic"] is not None else "无数据"
-        lines.append(f"| {dim} | {cur} | {sug} | {dlt} | {ic_s} | {info['note']} |")
+        t_s = f"{info['t_stat']:+.1f}" if info.get("t_stat") is not None else "—"
+        lines.append(f"| {dim} | {cur} | {sug} | {dlt} | {ic_s} | {t_s} | {info['note']} |")
 
     lines += [
         "",

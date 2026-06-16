@@ -214,49 +214,62 @@ def dim_ic_summary(results_df: pd.DataFrame) -> pd.DataFrame:
     return summary.reset_index(drop=True)
 
 
-def calibration_suggest(summary_df: pd.DataFrame) -> dict:
-    """由 IC 证据给出维度权重校准建议
+def calibration_suggest(summary_df: pd.DataFrame,
+                        max_step: float = 0.10, t_thresh: float = 1.0) -> dict:
+    """由 IC 证据给出维度权重校准建议(显著性护栏版)
 
-    逻辑: 取各维度 IC 均值(仅正值), 按比例归一, 与现有权重对比。
-    结果只用于报告, 不直接修改 config.py。
+    逻辑(防噪声归一假象):
+    - 仅当某维 IC 统计显著(|t|=|mean_ic|/(ic_std/√n) >= t_thresh)时才建议调整;
+      不显著则维持原权重(避免把 +0.0007 这种统计零归一成 100%)。
+    - 显著时朝 IC 方向小步、有界调整: step = max_step*tanh(t/2), clip 到 [0.05, cur+max_step];
+      永不把任一维清零。
+    - 结果只用于报告, 不直接修改 config.py; 最终权重需人工复核+归一。
 
     返回
     ----
-    dict: dim -> {"current": float, "suggested": float, "delta": float, "note": str}
+    dict: dim -> {"current","suggested","delta","mean_ic","t_stat","note"}
     """
     dim_rows = summary_df[summary_df["metric"].str.match(r"ic_[ABCDE]_")]
     if dim_rows.empty:
-        # fallback: 匹配 ic_A_return 风格
         dim_rows = summary_df[summary_df["metric"].str.startswith("ic_") &
                               ~summary_df["metric"].str.contains(r"\d")]
 
     ic_map = dict(zip(dim_rows["metric"], dim_rows["mean_ic"]))
-    suggestions = {}
-    total_pos_ic = sum(max(v, 0) for v in ic_map.values())
+    std_map = (dict(zip(dim_rows["metric"], dim_rows["ic_std"]))
+               if "ic_std" in dim_rows.columns else {})
+    n_map = (dict(zip(dim_rows["metric"], dim_rows["n_periods"]))
+             if "n_periods" in dim_rows.columns else {})
 
+    suggestions = {}
     for dim, cur_w in config.DIM_WEIGHTS.items():
         ic_key = f"ic_{dim}"
         ic_val = ic_map.get(ic_key, np.nan)
-        if np.isnan(ic_val):
+        if ic_val is None or (isinstance(ic_val, float) and np.isnan(ic_val)):
+            suggestions[dim] = {"current": cur_w, "suggested": cur_w, "delta": 0.0,
+                                "mean_ic": None, "t_stat": None,
+                                "note": "无IC数据, 保持原权重"}
+            continue
+
+        std = std_map.get(ic_key, np.nan)
+        n = n_map.get(ic_key, 0) or 0
+        se = (std / np.sqrt(n)) if (std and n and not np.isnan(std) and n > 0) else np.nan
+        t = float(ic_val / se) if (se and not np.isnan(se) and se > 1e-9) else 0.0
+
+        if abs(t) < t_thresh:
             suggested = cur_w
-            note = "无IC数据, 保持原权重"
-        elif total_pos_ic == 0:
-            suggested = cur_w
-            note = "各维IC≤0, 暂不调权(非缺数据)"
+            note = f"IC不显著(t={t:+.1f}), 维持原权重"
         else:
-            suggested = round(max(ic_val, 0) / total_pos_ic, 3) if total_pos_ic > 0 else cur_w
-            delta = suggested - cur_w
-            if abs(delta) < 0.02:
-                note = "与现权重接近, 无需调整"
-            elif delta > 0:
-                note = f"IC较强, 建议上调 {delta:+.2%}"
-            else:
-                note = f"IC较弱, 建议下调 {delta:+.2%}"
+            step = max_step * float(np.tanh(t / 2.0))
+            suggested = float(np.clip(cur_w + step, 0.05, cur_w + max_step))
+            note = (f"IC显著{'为正' if t > 0 else '为负'}(t={t:+.1f}), "
+                    f"建议{'上调' if suggested > cur_w else '下调'} "
+                    f"{suggested - cur_w:+.1%}(有界, 待人工归一)")
         suggestions[dim] = {
             "current": cur_w,
-            "suggested": suggested,
+            "suggested": round(suggested, 3),
             "delta": round(suggested - cur_w, 3),
-            "mean_ic": round(ic_val, 4) if not np.isnan(ic_val) else None,
+            "mean_ic": round(float(ic_val), 4),
+            "t_stat": round(t, 2),
             "note": note,
         }
     return suggestions

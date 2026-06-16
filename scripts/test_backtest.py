@@ -197,19 +197,31 @@ def test_no_future_data_in_score():
 
 
 
-def test_calibration_note_distinction():
-    """calibration_suggest: 区分'各维IC≤0'与'无IC数据'(任务26报告修复)"""
+def test_calibration_significance_guard():
+    """calibration_suggest 显著性护栏: 无数据保持/不显著维持/显著才有界调整且永不清零。"""
     import backtest as bt
-    neg = pd.DataFrame({"metric": ["ic_A_return", "ic_B_risk", "ic_C_attribution",
-                                    "ic_D_manager", "ic_E_operation"],
-                        "mean_ic": [-0.10, -0.05, -0.02, -0.03, -0.01],
-                        "current_weight": [0.30, 0.25, 0.20, 0.15, 0.10]})
-    sug = bt.calibration_suggest(neg)
-    assert any("IC≤0" in v["note"] for v in sug.values()), sug
+    # 1) 无IC数据 -> 保持原权重
     nan = pd.DataFrame({"metric": ["ic_A_return"], "mean_ic": [float("nan")],
-                        "current_weight": [0.30]})
+                        "ic_std": [float("nan")], "n_periods": [0]})
     assert "无IC数据" in bt.calibration_suggest(nan)["A_return"]["note"]
-    print("  calibration note 区分(各维IC≤0 vs 无数据) OK")
+    # 2) IC 不显著(大 std -> |t|<1) -> delta=0 且 note 标注不显著(杜绝 0%/100% 假象)
+    insig = pd.DataFrame({
+        "metric": ["ic_A_return", "ic_B_risk"],
+        "mean_ic": [0.0007, -0.04], "ic_std": [0.15, 0.13], "n_periods": [6, 6]})
+    s = bt.calibration_suggest(insig)
+    assert abs(s["A_return"]["delta"]) < 1e-9 and "不显著" in s["A_return"]["note"], s["A_return"]
+    assert abs(s["B_risk"]["delta"]) < 1e-9, s["B_risk"]
+    # 3) 显著为负(小 std -> |t|大) -> 有界下调, 但不清零(>=0.05)
+    sig = pd.DataFrame({"metric": ["ic_A_return"], "mean_ic": [-0.10],
+                        "ic_std": [0.05], "n_periods": [9]})  # t≈-6
+    a = bt.calibration_suggest(sig)["A_return"]
+    assert a["delta"] < 0 and a["suggested"] >= 0.05 and a["suggested"] < a["current"], a
+    # 4) 显著为正 -> 有界上调(<= cur + max_step)
+    sigp = bt.calibration_suggest(pd.DataFrame({
+        "metric": ["ic_B_risk"], "mean_ic": [0.10],
+        "ic_std": [0.05], "n_periods": [9]}))["B_risk"]
+    assert sigp["delta"] > 0 and sigp["suggested"] <= sigp["current"] + 0.10 + 1e-9, sigp
+    print("  calibration 显著性护栏(无数据/不显著/显著±有界/不清零) OK")
 
 
 def test_load_navs_diag():
@@ -270,7 +282,7 @@ if __name__ == "__main__":
     test_dim_ic_structure()
     test_multi_period()
     test_no_future_data_in_score()
-    test_calibration_note_distinction()
+    test_calibration_significance_guard()
     test_load_navs_diag()
     test_within_subgroup_scoring()
     print("\n全部回测测试通过 ✅")
