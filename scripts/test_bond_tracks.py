@@ -73,8 +73,8 @@ def test_excel_multi_sheet():
     print("== Excel 多 track 分表 ==")
     import openpyxl
     main_board = pd.DataFrame({
-        "fund_code": [f"{i:06d}" for i in range(6)], "composite_score": [80, 70, 60, 55, 50, 45],
-        "scorecard": ["BOND", "BOND", "BOND1", "BOND1", "BOND_PLUS", "BOND_PLUS"]})
+        "fund_code": [f"{i:06d}" for i in range(7)], "composite_score": [80, 70, 60, 55, 50, 45, 40],
+        "scorecard": ["BOND", "BOND", "BOND1", "BOND1", "BOND_PLUS", "BOND_PLUS", "BOND_INDEX"]})
     not_scored = pd.DataFrame({"fund_code": ["700001", "700002"],
                                "track": ["CB", "BOND_INDEX"]})
     micro = pd.DataFrame({"fund_code": ["900001"], "composite_score": [30], "scorecard": ["BOND"]})
@@ -83,14 +83,36 @@ def test_excel_multi_sheet():
         out = f"{d}/score_bond_test.xlsx"
         counts = rmb.write_score_workbook(out, main_board, not_scored, micro, df_all)
         names = set(openpyxl.load_workbook(out).sheetnames)
-    expect = {"纯债主榜", "一级债榜", "固收+榜", "可转债待评", "工具型待评", "小微观察区", "剔除清单"}
+    expect = {"纯债主榜", "一级债榜", "固收+榜", "工具型榜", "可转债待评", "工具型待评", "小微观察区", "剔除清单"}
     assert names == expect, names
     print(f"  sheets={sorted(names)} | counts={counts} ✓")
+
+
+def test_index_track():
+    print("== 工具型 track(BOND_INDEX) ==")
+    rng = np.random.default_rng(3)
+    rows = []
+    for ftype, n in [("指数型-固收", 6), ("QDII债券", 5), ("指数型-固收", 3)]:
+        # 第三组用于验证子组内 <5 不影响; 这里两类 fund_type 合并计数: 指数固收共9, QDII 5
+        for _ in range(n):
+            rows.append({"fund_type": ftype,
+                         "scale_yi": float(rng.uniform(1, 80)),
+                         "total_fee": float(rng.uniform(0.002, 0.008)),
+                         "fund_age_years": float(rng.uniform(1, 8))})
+    df = pd.DataFrame(rows)
+    df["fund_code"] = [f"{i:06d}" for i in range(len(df))]
+    scored = rmb.score_index_track(df)
+    assert not scored.empty and (scored["scorecard"] == "BOND_INDEX").all(), scored
+    subs = set(scored["index_subgroup"])
+    assert subs == {"指数固收", "QDII债"}, subs  # 两子组各>=5 均评分
+    assert scored["score_label"].str.startswith("provisional").all(), scored["score_label"].tolist()
+    print(f"  {len(scored)}只 BOND_INDEX, 子组={sorted(subs)}, Phase A 全 provisional ✓")
 
 
 if __name__ == "__main__":
     test_assign_track()
     test_score_subgroups_defer()
     test_plus_track()
+    test_index_track()
     test_excel_multi_sheet()
     print("\n4-Track 测试全部通过 ✅")

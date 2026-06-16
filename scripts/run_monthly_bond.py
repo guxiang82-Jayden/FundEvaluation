@@ -163,11 +163,23 @@ def score_cb_track(std_cb: pd.DataFrame, navs: dict = None,
     return scoring_bond_cb.score_cb(df)  # 已 tag scorecard="CB"
 
 
+def score_index_track(std_index: pd.DataFrame) -> pd.DataFrame:
+    """工具型 track: scoring_bond_index(Phase A: 成本/规模/运作分位; 跟踪误差/指数代表性待 Phase B)。
+    指数固收 / QDII债 分子组评分, <MIN_GROUP defer; 已 tag scorecard='BOND_INDEX'。模块缺失则跳过。"""
+    if std_index.empty:
+        return pd.DataFrame()
+    try:
+        import scoring_bond_index
+    except ImportError:
+        return pd.DataFrame()
+    return scoring_bond_index.score_index(std_index)
+
+
 # scorecard -> Excel sheet 名
 _SHEET_MAP = {
     "BOND": "纯债主榜", "BOND1": "一级债榜",
     "BOND_PLUS": "固收+榜", "BOND(fallback)": "固收+榜",
-    "CB": "可转债榜",
+    "CB": "可转债榜", "BOND_INDEX": "工具型榜",
 }
 
 
@@ -266,6 +278,7 @@ def main():
                         config.BOND_DIM_WEIGHTS, config.BOND_INDICATORS, "BOND1"),
         score_plus_track(standard[standard["track"] == "PLUS"], navs, equity_index_ret),
         score_cb_track(standard[standard["track"] == "CB"], navs, equity_index_ret),
+        score_index_track(standard[standard["track"] == "BOND_INDEX"]),
     ]
     parts = [p for p in parts if not p.empty]
     scored = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
