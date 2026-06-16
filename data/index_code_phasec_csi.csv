@@ -1,0 +1,6 @@
+index_family,index_code,index_name,index_mainstream,source_route,verified,note
+同业存单AAA,931059.CSI,中证同业存单AAA指数,0.80,akshare中证(待本机验)/iFinD确认,iFinD两次稳定返回931059,同业存单类工具型占比大,被动TE应极低(<0.5%)
+中证综合债,H11009.CSI,中证综合债指数,0.90,akshare中证(待本机验)/iFinD返回,标准中证债指,综合债基准
+中证短融,H11014.CSI,中证短融指数,0.60,akshare中证(待本机验)/iFinD返回,短融/超短债工具型基准
+# 说明: 仅含iFinD稳定返回、代码可信的中证系3族(Hxxxxx/931xxx, akshare/东财大概率可按代码取日度)。
+# 中债系(CBAxxxxx: 国开/政金/农发/国债各久期段)iFinD NL匹配不可靠(实测返回错误指数), 需官方中债指数代码字典核对后再填, 本表不含。
