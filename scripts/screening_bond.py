@@ -130,3 +130,29 @@ if __name__ == "__main__":
             ["fund_code", "screen_reasons", "screened_out", "channel"]
         ].to_string(index=False)
     )
+
+
+# 申赎受限关键词(可投性软约束: 定开停申赎/暂停个人买入/封闭等 -> 观察区, 不剔除)
+INVESTABILITY_BLOCK_PAT = r"暂停|停止|停止申赎|封闭|定期开放|定开|限大额|暂停大额|暂停个人"
+
+
+def mark_investability_bond(df: pd.DataFrame) -> pd.DataFrame:
+    """根据申赎状态标记可投性预警 investability_warn(软约束: 路由观察区, 不剔除)。
+
+    识别列(任一存在即用, 优雅降级——列缺失则不改):
+      - 文本状态: subscribe_status / redeem_status / purchase_status / fund_status_text
+      - 布尔: can_subscribe(False=>受限)
+    贴合固收 L3 反馈: 定开停申赎(如000212)/暂停个人买入(如000134)高分却买不了, 应前置降权。
+    与既有 investability_warn(规模过小)做 OR 合并; 下游 scoring.score_all 亦 OR 透传。
+    """
+    out = df.copy()
+    warn = pd.Series(False, index=out.index)
+    for c in ("subscribe_status", "redeem_status", "purchase_status", "fund_status_text"):
+        if c in out.columns:
+            warn = warn | out[c].fillna("").astype(str).str.contains(
+                INVESTABILITY_BLOCK_PAT, regex=True)
+    if "can_subscribe" in out.columns:
+        warn = warn | (~out["can_subscribe"].fillna(True).astype(bool))
+    existing = out.get("investability_warn", pd.Series(False, index=out.index)).fillna(False).astype(bool)
+    out["investability_warn"] = existing.to_numpy() | warn.to_numpy()
+    return out

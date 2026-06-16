@@ -112,11 +112,14 @@ def score_all(df: pd.DataFrame, dim_weights: dict = None, indicators: dict = Non
 
     out.loc[out["shortboard"], "composite_score"] *= 0.9  # 降档: 综合分打9折(v0.1 暂定)
 
-    # 可投性: 规模过小或缺失 -> 容量/限购风险, 不进正式池(参考核心原则: 排名须可投)
+    # 可投性: 规模过小 OR 上游已标记(申赎受限/定开停申赎等) -> 不进正式池(核心原则: 排名须可投)
+    # OR-合并而非覆盖: 让 screening 等上游设置的 investability_warn 存活(贴合固收L3反馈)。
+    pre_warn = df.get("investability_warn", pd.Series(False, index=out.index)).fillna(False).astype(bool)
     if "scale_yi" in out:
-        out["investability_warn"] = (out["scale_yi"].fillna(0) < config.MICRO_SCALE_YI)
+        micro = out["scale_yi"].fillna(0) < config.MICRO_SCALE_YI
     else:
-        out["investability_warn"] = False
+        micro = pd.Series(False, index=out.index)
+    out["investability_warn"] = micro.to_numpy() | pre_warn.to_numpy()
 
     # 重点池: 须 formal(覆盖率达标) + 非否决 + 非主维缺失 + 可投
     thresh = out["composite_score"].quantile(1 - config.FOCUS_POOL_TOP_PCT)

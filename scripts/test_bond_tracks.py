@@ -109,10 +109,40 @@ def test_index_track():
     print(f"  {len(scored)}只 BOND_INDEX, 子组={sorted(subs)}, Phase A 全 provisional ✓")
 
 
+def test_investability_warn():
+    print("== 可投性前置(mark + score_all OR透传) ==")
+    import scoring
+    df = pd.DataFrame({
+        "fund_code": [f"{i:06d}" for i in range(4)],
+        "subscribe_status": ["开放申购", "暂停申购", "", ""],
+        "can_subscribe": [True, True, False, True],
+        "fund_status_text": ["", "", "", "定期开放"],
+        "scale_yi": [50, 50, 50, 50]})
+    out = rmb.screening_bond.mark_investability_bond(df)
+    assert list(out["investability_warn"]) == [False, True, True, True], list(out["investability_warn"])
+    # 列全缺 -> 优雅降级, 不报错且全 False
+    bare = pd.DataFrame({"fund_code": ["x"], "scale_yi": [50]})
+    assert not rmb.screening_bond.mark_investability_bond(bare)["investability_warn"].any()
+    # score_all OR 透传: 规模大(micro=False)但上游 warn=True 应保留
+    rng = np.random.default_rng(9)
+    g = pd.DataFrame(_metric_cols(rng, 6))
+    g["fund_code"] = [f"{i:06d}" for i in range(6)]
+    g["bond_subgroup"] = "中长期纯债"
+    g["scale_yi"] = 50.0
+    g["investability_warn"] = [True, False, False, False, False, False]
+    scored = scoring.score_all(g, dim_weights=config.BOND_DIM_WEIGHTS,
+                               indicators=config.BOND_INDICATORS,
+                               veto_dim="B_risk", primary_dim="A_return")
+    sc0 = scored.set_index("fund_code").loc["000000", "investability_warn"]
+    assert bool(sc0) is True, "上游 investability_warn 未透传"
+    print("  状态识别/优雅降级/score_all OR透传 ✓")
+
+
 if __name__ == "__main__":
     test_assign_track()
     test_score_subgroups_defer()
     test_plus_track()
     test_index_track()
+    test_investability_warn()
     test_excel_multi_sheet()
     print("\n4-Track 测试全部通过 ✅")

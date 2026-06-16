@@ -260,7 +260,10 @@ def main():
     cov = screening_coverage(df)
     print("  初筛字段非空覆盖率: " + ", ".join(f"{k}={v:.0%}" for k, v in cov.items()))
     standard = df[df["channel"] == "standard"].copy()
-    print(f"标准通道: {len(standard)} | 剔除: {df['screened_out'].sum()}")
+    # 可投性前置(固收L3反馈): 定开停申赎/暂停个人买入 -> investability_warn(路由观察区, 不剔除)
+    standard = screening_bond.mark_investability_bond(standard)
+    _warn_n = int(standard.get("investability_warn", pd.Series(dtype=bool)).sum())
+    print(f"标准通道: {len(standard)} | 剔除: {df['screened_out'].sum()} | 可投性预警: {_warn_n}")
     print(f"  track 分布: {standard['track'].value_counts().to_dict()}")
 
     # 固收+ 股债贡献需权益指数
