@@ -18,6 +18,7 @@ import classify_bond
 import config
 import data_akshare as da
 import data_bond
+import build_index_navs
 import metrics_bond
 import scoring
 import screening_bond
@@ -163,8 +164,9 @@ def score_cb_track(std_cb: pd.DataFrame, navs: dict = None,
     return scoring_bond_cb.score_cb(df)  # 已 tag scorecard="CB"
 
 
-def score_index_track(std_index: pd.DataFrame) -> pd.DataFrame:
-    """工具型 track: scoring_bond_index(Phase A: 成本/规模/运作分位; 跟踪误差/指数代表性待 Phase B)。
+def score_index_track(std_index: pd.DataFrame, navs: dict = None,
+                      index_ret_map: dict = None) -> pd.DataFrame:
+    """工具型 track: scoring_bond_index(Phase B: 映射可用时计算跟踪误差/指数代表性)。
     指数固收 / QDII债 分子组评分, <MIN_GROUP defer; 已 tag scorecard='BOND_INDEX'。模块缺失则跳过。"""
     if std_index.empty:
         return pd.DataFrame()
@@ -172,7 +174,9 @@ def score_index_track(std_index: pd.DataFrame) -> pd.DataFrame:
         import scoring_bond_index
     except ImportError:
         return pd.DataFrame()
-    return scoring_bond_index.score_index(std_index)
+    df = build_index_navs.merge_index_map(std_index)
+    df = scoring_bond_index.build_index_metrics(df, navs, index_ret_map)
+    return scoring_bond_index.score_index(df)
 
 
 # scorecard -> Excel sheet 名
@@ -272,6 +276,14 @@ def main():
     except Exception as e:  # noqa: BLE001
         print(f"[warn] 权益指数取数失败, equity_contrib 跳过: {e}")
         equity_index_ret = None
+    try:
+        index_map = build_index_navs.load_index_map()
+        index_ret_map = build_index_navs.build_index_ret_map(index_map)
+        mapped_n = int(index_map["index_code"].notna().sum()) if not index_map.empty else 0
+        print(f"  BOND_INDEX 映射表: {len(index_map)} 行 | 有指数代码: {mapped_n} | 指数收益: {len(index_ret_map)}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] BOND_INDEX 指数映射/收益取数失败, 工具型卡降级: {e}")
+        index_ret_map = {}
 
     print("== L2 评分(4-Track) ==")
     parts = [
@@ -281,7 +293,7 @@ def main():
                         config.BOND_DIM_WEIGHTS, config.BOND_INDICATORS, "BOND1"),
         score_plus_track(standard[standard["track"] == "PLUS"], navs, equity_index_ret),
         score_cb_track(standard[standard["track"] == "CB"], navs, equity_index_ret),
-        score_index_track(standard[standard["track"] == "BOND_INDEX"]),
+        score_index_track(standard[standard["track"] == "BOND_INDEX"], navs, index_ret_map),
     ]
     parts = [p for p in parts if not p.empty]
     scored = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()

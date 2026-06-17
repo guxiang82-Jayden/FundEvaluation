@@ -33,3 +33,11 @@
 ## 边界
 - ✅ 只动 data_akshare.py(取数)+ 测试;整表拉取
 - ❌ 不改 scoring/screening_bond/run_monthly_bond(主线已就绪,列对齐即可);不 push;不逐只调接口
+
+✅ 已完成 2026-06-17
+
+Codex 回写:
+- `fund_purchase_em` 实测 26752 行, 已标准化为 `fund_code/subscribe_status/redeem_status/next_open_date` 并接入 `build_meta_table`。
+- 000212: `subscribe_status=暂停申购`, `redeem_status=暂停赎回`, `next_open_date=2026-08-12`, `investability_warn=True`。
+- 000134: `subscribe_status=暂停申购`, `redeem_status=开放赎回`, `investability_warn=True`。
+- 已验证取数失败时补空列并不中断主流程。

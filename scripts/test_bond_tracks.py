@@ -109,6 +109,32 @@ def test_index_track():
     print(f"  {len(scored)}只 BOND_INDEX, 子组={sorted(subs)}, Phase A 全 provisional ✓")
 
 
+def test_index_track_phase_b():
+    print("== 工具型 track Phase B(跟踪误差+主流度) ==")
+    rng = np.random.default_rng(31)
+    idx = pd.bdate_range(end="2026-05-29", periods=260)
+    index_ret = pd.Series(rng.normal(0.0001, 0.002, len(idx)), index=idx)
+    rows, navs = [], {}
+    for i in range(6):
+        code = f"03{i:04d}"
+        ret = index_ret + rng.normal(0, 0.0003 + i * 0.0002, len(idx))
+        navs[code] = pd.Series((1 + ret).cumprod(), index=idx)
+        rows.append({
+            "fund_code": code,
+            "fund_type": "指数型-固收",
+            "scale_yi": 10 + i,
+            "total_fee": 0.004,
+            "fund_age_years": 5,
+            "index_code": "CBA_TEST",
+            "index_mainstream": 0.9,
+        })
+    scored = rmb.score_index_track(pd.DataFrame(rows), navs, {"CBA_TEST": index_ret})
+    assert not scored.empty
+    assert scored["tracking_error"].notna().all()
+    assert scored["score_label"].eq("formal").all(), scored["score_label"].tolist()
+    print("  映射+指数收益可用 -> tracking_error 生效且 formal ✓")
+
+
 def test_investability_warn():
     print("== 可投性前置(mark + score_all OR透传) ==")
     import scoring
@@ -143,6 +169,7 @@ if __name__ == "__main__":
     test_score_subgroups_defer()
     test_plus_track()
     test_index_track()
+    test_index_track_phase_b()
     test_investability_warn()
     test_excel_multi_sheet()
     print("\n4-Track 测试全部通过 ✅")

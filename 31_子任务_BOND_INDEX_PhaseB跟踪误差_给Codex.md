@@ -35,3 +35,14 @@
 - ✅ 新建 index_map_bond.csv + build_index_navs.py;最小改动 run_monthly_bond/score_index_track 接 Phase B 接口
 - ❌ 不改 scoring_bond_index.py 的评分逻辑/权重(只喂数据);不改 scoring.py/config.py;不 push
 - 参考:`scoring_bond_index.py`(build_index_metrics/_lookup_index_return/_tracking_stats)、`data_akshare.index_returns`
+
+✅ 已完成 2026-06-17
+
+Codex 回写:
+- `data/index_map_bond.csv` 当前 26 行, 其中 24 行有 `index_code`; QDII债留空降级, 不用境内中债指数硬套。
+- `build_index_navs.py` 已接入 `run_monthly_bond.score_index_track(navs, index_ret_map)`, 映射/指数失败会降级不中断。
+- 轻量实测 `CBA00101` 可取收益; 抽样 3 只成功计算 tracking_error:
+  - 006102: TE=0.155970
+  - 007729: TE=0.110158
+  - 008100: TE=0.208294
+- `index_mainstream` 为人工先验, 待后续用真实映射与回测校准。

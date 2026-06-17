@@ -64,3 +64,13 @@
 - ✅ 只新建 scoring_bond_index.py + 测试;配置写模块内;Phase A 只用现成数据
 - ❌ 不改 config/scoring/run_monthly_bond;不 push;不接入流水线(主线负责);不硬造指数映射数据
 - 参考:`scoring_bond_cb.py`(隔离写法 + score_all 复用)、`10_固收线框架v0.4`、用户口径"跟踪误差/费率/规模/流动性/指数代表性,先排除同业存单"
+
+---
+
+✅ 已完成 2026-06-16
+
+- 新增 `scripts/scoring_bond_index.py` 与 `scripts/test_scoring_bond_index.py`。
+- Phase A 支持 `total_fee`、`scale_yi -> scale_adj`、`fund_age_years` 评分；缺 `tracking_error/index_mainstream` 时自动降级为 `provisional`。
+- 已预留 Phase B `navs + index_ret_map` 跟踪误差接口；未硬造指数映射数据。
+- 子组按 `指数固收/QDII债` 分开评分，子组少于 5 只 defer。
+- 离线测试通过：分组、降级、低费率/规模、defer、tracking_error 方向均验证。

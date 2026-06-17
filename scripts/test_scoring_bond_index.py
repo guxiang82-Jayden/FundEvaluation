@@ -83,9 +83,35 @@ def test_tracking_error_direction():
     print("  跟踪误差小 -> A维更高, A维补齐后覆盖率升为formal区间 ✓")
 
 
+def test_index_mainstream_direction():
+    print("== index_mainstream 方向 ==")
+    df = _synth(n_each=6).query("fund_type == '指数型-固收'").copy()
+    df["index_mainstream"] = [0.1, 0.2, 0.4, 0.6, 0.8, 1.0]
+    scored = bi.score_index(bi.build_index_metrics(df))
+    high = scored.loc[scored["index_mainstream"].idxmax()]
+    low = scored.loc[scored["index_mainstream"].idxmin()]
+    assert high["score_D_manager"] > low["score_D_manager"]
+    print("  主流度高 -> D维更高 ✓")
+
+
+def test_missing_mapping_stays_provisional():
+    print("== 映射缺失降级 ==")
+    idx = pd.bdate_range(end="2026-05-29", periods=80)
+    navs = {f"D{i:03d}": pd.Series(np.linspace(1.0, 1.05, len(idx)), index=idx)
+            for i in range(6)}
+    df = bi.build_index_metrics(_synth(n_each=6).query("fund_type == '指数型-固收'"),
+                                navs=navs, index_ret_map={})
+    scored = bi.score_index(df)
+    assert scored["tracking_error"].isna().all()
+    assert scored["score_label"].str.startswith("provisional").all()
+    print("  有基金净值但无指数映射 -> tracking缺失, provisional ✓")
+
+
 if __name__ == "__main__":
     test_split_and_phase_a_degrade()
     test_fee_and_scale_rank_within_group()
     test_defer_small_subgroup()
     test_tracking_error_direction()
+    test_index_mainstream_direction()
+    test_missing_mapping_stays_provisional()
     print("\nBOND_INDEX 工具型记分卡测试全部通过 ✅")

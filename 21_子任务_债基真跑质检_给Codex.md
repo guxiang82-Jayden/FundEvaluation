@@ -40,3 +40,5 @@ python run_monthly_bond.py --limit 60  # 双 track 真跑(调试, 不归档)
 - ❌ 不改任何 .py(发现 bug 只写报告);❌ 不 push
 - ✅ 只新增 bond_run_report.md
 - 跑批耗时长可先 `--limit 60`;若顺利可再 `python run_monthly_bond.py`(全量,会归档)
+
+✅ 已完成 2026-06-14

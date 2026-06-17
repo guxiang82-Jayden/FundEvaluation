@@ -48,3 +48,13 @@
 - ✅ 新建审核备忘 + 两个脚本;CB 单组回测;诚实标注证据强度
 - ❌ 不改 scoring_bond_cb.py / config / scoring;不 push;不把噪声当信号
 - 参考:`scoring_bond_cb.py`、`scripts/backtest.py`(防前视/calibration_suggest 护栏)、`research/基金评估-核心原则_过去与未来`、华宝/NAFMII 研报
+
+---
+
+✅ 已完成 2026-06-16
+
+- 新增 `scripts/cb_weight_sensitivity.py`、`scripts/backtest_cb.py`、`research/基金评估-CB权重审核_v0校准.md`。
+- 敏感性脚本离线合成样本通过；CB mini-RankIC `--self-test` 通过。
+- 本机真实 `python scripts\backtest_cb.py --limit 80` 已跑：CB universe 80，净值成功 79，失败 1；各期有效样本 33/43/50/60/62。
+- 真跑 IC：A_return mean IC=-0.1421, t=-1.26；B_risk mean IC=-0.1124, t=-0.89；C_attribution mean IC=-0.0374, t=-0.82。
+- 结论：A 维边际负向需复验，B/C 不显著；证据不足以直接改权重，建议维持 v0，等 Jayden 评审。
