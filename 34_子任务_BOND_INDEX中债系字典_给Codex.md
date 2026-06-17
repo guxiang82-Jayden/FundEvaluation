@@ -36,3 +36,14 @@
 - ✅ Step0 探源 → 有源则建权威字典+回填+TE gate;无源则如实挂起
 - ❌ 不 NL 猜代码;不造假 TE;不碰中证系(已完成);不改评分逻辑;不 push
 - 参考:`data/index_code_ref.csv`、`data/index_map_bond_phasec_te_check.md`(33 范式)、`build_index_navs.py`
+
+✅ 已完成 2026-06-17
+
+Codex 回写:
+- Step0 净值源结论: 本机可通过 `akshare.bond_index_general_cbond(index_category, indicator="财富", period=...)` 按中债官网指数族 + 期限段取历史日度财富指数。
+- 本机未取得官方 `CBAxxxxx` 代码表, 因此未伪造 CBA 代码; 使用透明内部源键 `CBOND_<中债指数族>_<期限段>`, 并在 `data/index_code_cbond_ref.csv` 标注 `return_source/verified`。
+- 新增 `data/index_code_cbond_ref.csv` 28 行; 初始回填 CBOND 161 只, TE gate 后保留 154 只, 撤回 7 只。
+- 当前 `index_map_bond.csv` 全表有 `index_code` 264 只; `build_index_navs.py` 实测 `index_map rows=756 mapped=264 returns=11`。
+- CBOND gate 后 TE: overall min=0.002810, median=0.005796, max=0.028783; 保留样本无 >3% TE。
+- 政金债暂不回填: 本机中债可用列表没有朴素同名“政策性金融债指数”族, 未使用“投资优选政策性金融债/国债及政策性银行债”等近似源。
+- 详见 `data/index_map_bond_cbond_te_check.md`; 原始明细见 `data/index_map_bond_cbond_te_raw.csv`。

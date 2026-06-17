@@ -120,16 +120,36 @@ def _normalize_csi_code(code: str) -> str | None:
     return None
 
 
+def _parse_cbond_code(code: str) -> tuple[str, str] | None:
+    raw = str(code).strip()
+    if not raw.startswith("CBOND_"):
+        return None
+    body = raw[len("CBOND_"):]
+    if "_" not in body:
+        return None
+    category, period = body.rsplit("_", 1)
+    if category and period:
+        return category, period
+    return None
+
+
 def index_returns(code: str) -> pd.Series:
     """指数日收益.
 
     股票指数(sh/sz前缀)走新浪; 中债指数(CBA前缀)走中债综合指数;
-    中证系(931059.CSI/H11009.CSI/H11014.CSI 等)走中证官网历史行情。
+    中证系(931059.CSI/H11009.CSI/H11014.CSI 等)走中证官网历史行情;
+    中债细分源键(CBOND_指数族_期限段)走中债官网指数族接口。
     港股通综指暂无源, 基准含其成分时按剩余权重归一(benchmark.resolve_components 已处理)"""
     code = str(code).strip()
 
     def fetch():
-        if code.startswith("CBA"):
+        cbond = _parse_cbond_code(code)
+        if cbond:
+            category, period = cbond
+            df = ak.bond_index_general_cbond(
+                index_category=category, indicator="财富", period=period)
+            df = df.rename(columns={"value": "close"})
+        elif code.startswith("CBA"):
             try:
                 df = ak.bond_new_composite_index_cbond(indicator="财富", period="总值")
             except Exception:
