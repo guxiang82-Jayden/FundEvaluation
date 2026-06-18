@@ -43,7 +43,7 @@ def apply_screening(df: pd.DataFrame) -> pd.DataFrame:
         flag(df["inst_ratio"] > S["N6_max_inst_ratio"], "N6_机构定制盘")
     if "style_switches_2y" in df and "fund_age_for_style" in df:
         # N7 不豁免: 成立>=2年即适用
-        flag((df["fund_age_for_style"] >= 2) & (df["style_switches_2y"] >= S["N7_max_style_switches"]),
+        flag((df["fund_age_for_style"] >= 2) & (df["style_switches_2y"] > S["N7_max_style_switches"]),
              "N7_风格漂移")
     if "negative_record" in df:
         flag(df["negative_record"] == True, "N8_负面记录")  # noqa: E712

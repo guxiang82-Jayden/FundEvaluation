@@ -288,6 +288,33 @@ def load_all_index_returns_v2() -> dict:
     return out
 
 
+def style_index_returns(csv_path: str = os.path.join("data", "style_index_returns.csv")) -> pd.DataFrame:
+    """四风格指数日收益表; AKShare 不可用时尝试读取主线提供的 CSV。"""
+    import rbsa as _rbsa
+
+    series = {}
+    errors = []
+    for style, code in _rbsa.DEFAULT_STYLE_BASIS.items():
+        try:
+            series[style] = index_returns(code).rename(style)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{style}/{code}: {e}")
+    if len(series) == len(_rbsa.DEFAULT_STYLE_BASIS):
+        return pd.concat(series.values(), axis=1, join="inner").dropna().sort_index()
+
+    if os.path.exists(csv_path):
+        fallback = pd.read_csv(csv_path)
+        date_col = _pick_column(fallback.columns, ["date", "日期"])
+        required = list(_rbsa.DEFAULT_STYLE_BASIS)
+        if date_col and set(required).issubset(fallback.columns):
+            fallback[date_col] = pd.to_datetime(fallback[date_col], errors="coerce")
+            return (fallback.set_index(date_col)[required]
+                    .apply(pd.to_numeric, errors="coerce")
+                    .dropna()
+                    .sort_index())
+    raise RuntimeError("风格指数收益不完整且无可用 CSV fallback: " + "; ".join(errors))
+
+
 def load_all_index_returns() -> dict:
     """(兼容旧入口)"""
     out = {}

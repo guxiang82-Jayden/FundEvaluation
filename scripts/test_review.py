@@ -40,7 +40,7 @@ def test_hit_rate_and_ic():
     ic = review.rank_ic(prev, fwd)
     assert hr["top_hit_rate"] >= 0.6, hr
     assert ic["composite_score"] > 0.3, ic
-    print(f"  Top命中率 {hr['top_hit_rate']:.0%} | 综合RankIC {ic['composite_score']:+.3f} ✓")
+    print(f"  Top命中率 {hr['top_hit_rate']:.0%} | 综合RankIC {ic['composite_score']:+.3f} [OK]")
 
 
 def test_comparability_breaks():
@@ -54,7 +54,7 @@ def test_comparability_breaks():
     codes = set(br["fund_code"])
     assert "000000" in codes and "000001" in codes, codes
     assert bool(br[br["fund_code"] == "000000"]["prev_top"].iloc[0]) is True
-    print(f"  检出 {len(br)} 只(规模突变+换将), 上期Top标记正确 ✓")
+    print(f"  检出 {len(br)} 只(规模突变+换将), 上期Top标记正确 [OK]")
 
 
 def test_load_and_run_bond():
@@ -83,11 +83,11 @@ def test_load_and_run_bond():
         txt = open(path, encoding="utf-8").read()
         assert "命中率" in txt and "RankIC" in txt
         assert "FN1_规模过小" in txt, "Q2 规则有效性未生效"
-    print("  债基2榜合并(30只) + 报告含命中率/RankIC/Q2规则有效性 ✓")
+    print("  债基2榜合并(30只) + 报告含命中率/RankIC/Q2规则有效性 [OK]")
 
 
 if __name__ == "__main__":
     test_hit_rate_and_ic()
     test_comparability_breaks()
     test_load_and_run_bond()
-    print("\nreview.py 复盘测试全部通过 ✅")
+    print("\nreview.py 复盘测试全部通过 [OK]")

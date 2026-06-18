@@ -53,7 +53,7 @@ def test_cdim_bond_loader_and_coverage():
     cmissing = scored["score_C_attribution"].isna().sum()
     print(f"  C维命中: credit_sink {merged['credit_sink'].notna().sum()}/{n}, "
           f"duration {merged['duration_dev'].notna().sum()}/{n}")
-    print(f"  覆盖率 {cov:.0%}(ABCDE) -> formal ✓ | C维评出 {n - cmissing}/{n} 只")
+    print(f"  覆盖率 {cov:.0%}(ABCDE) -> formal [OK] | C维评出 {n - cmissing}/{n} 只")
     print(f"  综合分范围 [{scored['composite_score'].min():.1f}, {scored['composite_score'].max():.1f}]")
 
 
@@ -115,4 +115,4 @@ def test_pick_effect_data_gated(tmp_path=None):
 if __name__ == "__main__":
     test_cdim_bond_loader_and_coverage()
     test_pick_effect_data_gated()
-    print("\ncdim_bond C维接入测试通过 ✅")
+    print("\ncdim_bond C维接入测试通过 [OK]")
