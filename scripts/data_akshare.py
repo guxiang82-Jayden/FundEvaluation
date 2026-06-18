@@ -81,30 +81,97 @@ def merge_share_classes(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------- 净值 ----------
-def fund_nav(fund_code: str) -> pd.Series:
-    """单基金累计净值序列(已实测: 列名 净值日期/累计净值)
-    ⚠️ 已知近似: 累计净值为分红简单加回, 非分红再投资复权; 对高分红基金收益略低估
-    TODO v0.2: 用 单位净值+分红送配详情 自建复权净值"""
-    def fetch():
-        df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="累计净值走势")
-        if df.empty or not {"净值日期", "累计净值"}.issubset(df.columns):
-            raise ValueError("无净值数据(新发/特殊基金)")
-        df = df.rename(columns={"净值日期": "date", "累计净值": "nav"})
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
-        df["nav"] = pd.to_numeric(df["nav"], errors="coerce")
-        return (df[["date", "nav"]]
-                .dropna(subset=["date", "nav"])
-                .sort_values("date", kind="stable")
-                .drop_duplicates("date", keep="last"))
-    df = cached(f"nav_{fund_code}", fetch, max_age_days=1)
-    # 再清洗一次以兼容修复前生成的坏缓存。
+def _clean_nav_frame(df: pd.DataFrame) -> pd.DataFrame:
     df = df[["date", "nav"]].copy()
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df["nav"] = pd.to_numeric(df["nav"], errors="coerce")
-    df = (df.dropna(subset=["date", "nav"])
-          .sort_values("date", kind="stable")
-          .drop_duplicates("date", keep="last"))
+    return (df.dropna(subset=["date", "nav"])
+            .sort_values("date", kind="stable")
+            .drop_duplicates("date", keep="last"))
+
+
+def fund_nav_unit(fund_code: str) -> pd.Series:
+    """单基金单位净值序列(未复权), 供复权构造与口径核验。"""
+    def fetch():
+        df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="单位净值走势")
+        if df.empty or not {"净值日期", "单位净值"}.issubset(df.columns):
+            raise ValueError("无净值数据(新发/特殊基金)")
+        return _clean_nav_frame(
+            df.rename(columns={"净值日期": "date", "单位净值": "nav"}))
+    df = _clean_nav_frame(cached(f"nav_unit_{fund_code}", fetch, max_age_days=1))
     return df.set_index("date")["nav"]
+
+
+def _parse_dividend_per_share(value) -> float | None:
+    """解析 '每份派现金0.1230元' 等东财分红文本。"""
+    if value is None or pd.isna(value):
+        return None
+    import re
+    match = re.search(r"现金\s*([\d.]+)\s*元", str(value))
+    if not match:
+        match = re.search(r"([\d.]+)", str(value))
+    return float(match.group(1)) if match else None
+
+
+def fund_dividends(fund_code: str) -> pd.DataFrame:
+    """每份现金分红表, 列 date/dividend; 无分红时返回空表。"""
+    def fetch():
+        df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="分红送配详情")
+        if df.empty:
+            return pd.DataFrame(columns=["date", "dividend"])
+        date_col = _pick_column(df.columns, ["除息日", "权益登记日", "分红发放日"])
+        value_col = _pick_column(df.columns, ["每份分红", "分红"])
+        if date_col is None or value_col is None:
+            raise ValueError("分红送配详情缺少除息日/每份分红列")
+        out = pd.DataFrame({
+            "date": pd.to_datetime(df[date_col], errors="coerce"),
+            "dividend": df[value_col].map(_parse_dividend_per_share),
+        }).dropna()
+        out = out[out["dividend"] > 0]
+        return out.groupby("date", as_index=False)["dividend"].sum()
+
+    df = cached(f"dividend_{fund_code}", fetch, max_age_days=30)
+    if df.empty:
+        return pd.DataFrame(columns=["date", "dividend"])
+    out = df[["date", "dividend"]].copy()
+    out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    out["dividend"] = pd.to_numeric(out["dividend"], errors="coerce")
+    return out.dropna().sort_values("date")
+
+
+def _reinvest_dividends(unit_nav: pd.Series, dividends: pd.DataFrame) -> pd.Series:
+    """按除息日单位净值将现金分红再投资, 返回前复权净值。"""
+    nav = pd.to_numeric(unit_nav, errors="coerce").dropna().sort_index()
+    nav = nav[~nav.index.duplicated(keep="last")]
+    if nav.empty or dividends is None or dividends.empty:
+        return nav
+
+    div_by_nav_date = pd.Series(0.0, index=nav.index)
+    for row in dividends.itertuples(index=False):
+        pos = nav.index.searchsorted(pd.Timestamp(row.date), side="left")
+        if pos < len(nav):
+            div_by_nav_date.iloc[pos] += float(row.dividend)
+
+    factor_step = 1.0 + div_by_nav_date.div(nav).fillna(0.0)
+    adjusted = nav * factor_step.cumprod()
+    adjusted.name = "nav"
+    return adjusted
+
+
+def fund_nav_adjusted(fund_code: str) -> pd.Series:
+    """分红再投资复权净值; 分红源失败时优雅降级为单位净值。"""
+    unit = fund_nav_unit(fund_code)
+    try:
+        dividends = fund_dividends(fund_code)
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] {fund_code} dividend failed, use unit NAV: {e}")
+        dividends = pd.DataFrame(columns=["date", "dividend"])
+    return _reinvest_dividends(unit, dividends)
+
+
+def fund_nav(fund_code: str) -> pd.Series:
+    """单基金分红再投资复权净值(生产统一口径)。"""
+    return fund_nav_adjusted(fund_code)
 
 
 # ---------- 指数行情(基准合成用) ----------
@@ -295,22 +362,6 @@ def fund_meta(fund_code: str, verbose: bool = False) -> dict:
         if verbose:
             print(f"[warn] {fund_code} 资产配置 失败: {e}")
 
-    # 4) 费率(E1): 同花顺源 fund_info_ths 含 管理费/托管费
-    #    ⚠️ 字段名待本机实测核对(沙箱无 akshare 网络); 失败则 E1 留空降级
-    #    ⚠️ 性能: 每只额外一次网络调用, 全量会增耗时; 费率少变, 可改为一次性批量缓存(类 cdim)
-    #    若实测拖慢明显, 注释掉本段, 改用单独的 fee 缓存 CSV
-    try:
-        info = ak.fund_info_ths(symbol=fund_code)
-        kv = dict(zip(info.iloc[:, 0], info.iloc[:, 1])) if info.shape[1] >= 2 else {}
-        mgmt = _parse_pct(kv.get("管理费"))
-        cust = _parse_pct(kv.get("托管费"))
-        if mgmt is not None or cust is not None:
-            meta["total_fee"] = (mgmt or 0) + (cust or 0)
-    except Exception as e:  # noqa: BLE001
-        _warn(fund_code, "费率")
-        if verbose:
-            print(f"[warn] {fund_code} 费率 失败: {e}")
-
     return meta
 
 
@@ -334,6 +385,72 @@ def _parse_scale_yi(text: str) -> float | None:
     if unit == "万":
         return v / 10000
     return v
+
+
+def _parse_operating_fee(df: pd.DataFrame) -> dict:
+    """解析 fund_fee_em('运作费用') 的横向键值表。"""
+    values = {}
+    if df is None or df.empty:
+        return values
+    flat = df.astype(object).where(pd.notna(df), None).to_numpy().ravel().tolist()
+    for i in range(0, len(flat) - 1, 2):
+        key = str(flat[i]).strip() if flat[i] is not None else ""
+        if "费率" in key:
+            values[key] = _parse_pct(flat[i + 1])
+    return values
+
+
+def fund_fee_table(fund_codes: list) -> pd.DataFrame:
+    """批量构建长期缓存的年运作费率表, 避免 fund_meta 逐只重复取数。"""
+    codes = pd.Series(fund_codes, dtype=str).str.replace(
+        r"\.0$", "", regex=True).str.zfill(6).drop_duplicates().tolist()
+    path = _cache_path("fund_operating_fees")
+    columns = ["fund_code", "management_fee", "custodian_fee",
+               "sales_service_fee", "total_fee"]
+    if os.path.exists(path):
+        try:
+            old = pd.read_parquet(path)
+        except Exception:  # noqa: BLE001
+            old = pd.DataFrame(columns=columns)
+    else:
+        old = pd.DataFrame(columns=columns)
+    if "fund_code" not in old:
+        old = pd.DataFrame(columns=columns)
+    old["fund_code"] = old["fund_code"].astype(str).str.zfill(6)
+    missing = [code for code in codes if code not in set(old["fund_code"])]
+
+    rows = []
+    failed = 0
+    for i, code in enumerate(missing):
+        try:
+            fees = _parse_operating_fee(ak.fund_fee_em(
+                symbol=code, indicator="运作费用"))
+            mgmt = fees.get("管理费率")
+            cust = fees.get("托管费率")
+            sales = fees.get("销售服务费率")
+            valid = [x for x in (mgmt, cust, sales) if x is not None]
+            rows.append({
+                "fund_code": code,
+                "management_fee": mgmt,
+                "custodian_fee": cust,
+                "sales_service_fee": sales,
+                "total_fee": sum(valid) if valid else None,
+            })
+        except Exception:  # noqa: BLE001
+            failed += 1
+        if (i + 1) % 50 == 0:
+            print(f"  fee {i+1}/{len(missing)}")
+    if failed:
+        print(f"  [warn] fee fetch failed: {failed}/{len(missing)} (will retry next run)")
+
+    if rows:
+        old = pd.concat([old, pd.DataFrame(rows)], ignore_index=True)
+        old = old.drop_duplicates("fund_code", keep="last")
+    for col in ("management_fee", "custodian_fee", "sales_service_fee", "total_fee"):
+        old[col] = pd.to_numeric(old[col], errors="coerce")
+    if rows:
+        old.to_parquet(path, index=False)
+    return old[old["fund_code"].isin(codes)].reindex(columns=columns)
 
 
 def _merge_purchase_status(df: pd.DataFrame) -> pd.DataFrame:
@@ -368,6 +485,11 @@ def _merge_purchase_status(df: pd.DataFrame) -> pd.DataFrame:
 def build_meta_table(fund_codes: list) -> pd.DataFrame:
     """批量元数据表(供 screening). 注意接口限频, 必要时加 sleep"""
     import time
+    try:
+        fee_table = fund_fee_table(fund_codes)
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] fund_fee_table failed, E1 degraded: {e}")
+        fee_table = pd.DataFrame(columns=["fund_code", "total_fee"])
     rows = []
     for i, code in enumerate(fund_codes):
         rows.append(fund_meta(code))
@@ -396,4 +518,18 @@ def build_meta_table(fund_codes: list) -> pd.DataFrame:
         # 管理半径: 在管规模 × √产品数(一拖多稀释); 越大越差(scoring direction=-1)
         cnt = pd.to_numeric(df.get("manager_fund_count", 1), errors="coerce").fillna(1)
         df["management_load"] = pd.to_numeric(df["manager_total_aum"], errors="coerce") * np.sqrt(cnt)
+    if not fee_table.empty:
+        fee_cols = [c for c in fee_table.columns if c == "fund_code" or c not in df.columns]
+        df = df.merge(fee_table[fee_cols], on="fund_code", how="left")
+    coverage = df.get("total_fee", pd.Series(np.nan, index=df.index)).notna().mean()
+    fee_values = pd.to_numeric(df.get("total_fee", pd.Series(dtype=float)), errors="coerce")
+    valid_fee = fee_values.dropna()
+    if len(df):
+        if valid_fee.empty:
+            print("  E1 total_fee覆盖率: 0.0%")
+        else:
+            print(f"  E1 total_fee覆盖率: {coverage:.1%} | "
+                  f"p25/中位/p75: {valid_fee.quantile(.25):.2%}/"
+                  f"{valid_fee.median():.2%}/{valid_fee.quantile(.75):.2%} | "
+                  f"异常(<=0或>3%): {((valid_fee <= 0) | (valid_fee > .03)).sum()}")
     return _merge_purchase_status(df)
