@@ -42,9 +42,13 @@ def apply_screening(df: pd.DataFrame) -> pd.DataFrame:
     if "inst_ratio" in df:
         flag(df["inst_ratio"] > S["N6_max_inst_ratio"], "N6_机构定制盘")
     if "style_switches_2y" in df and "fund_age_for_style" in df:
-        # N7 不豁免: 成立>=2年即适用
-        flag((df["fund_age_for_style"] >= 2) & (df["style_switches_2y"] > S["N7_max_style_switches"]),
-             "N7_风格漂移")
+        # N7 风格漂移: 软标记不剔除(2026-06-18 决策)。当前 0.6 单标签阈值在
+        # "均衡<->单一风格"附近抖动 -> 触发过半误杀, 暂作观察标记 style_drift_warn,
+        # 待标签滞回/连续两窗口确认/同类组阈值校准后再议是否硬剔。
+        df["style_drift_warn"] = ((df["fund_age_for_style"] >= 2)
+                                  & (df["style_switches_2y"] > S["N7_max_style_switches"])).fillna(False)
+    else:
+        df["style_drift_warn"] = False
     if "negative_record" in df:
         flag(df["negative_record"] == True, "N8_负面记录")  # noqa: E712
     if "equity_low_quarters" in df:
