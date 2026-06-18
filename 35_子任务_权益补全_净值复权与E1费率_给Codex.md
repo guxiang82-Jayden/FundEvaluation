@@ -1,0 +1,36 @@
+# 子任务 35:权益线补全(一)— 净值真复权 + E1 费率(给本机 Codex)
+
+> 遵循 COLLABORATION.md:只本地 commit 不 push;完成回写"✅ 已完成"。
+> 本机有 akshare。两件都是 `data_akshare.py` 取数层的改造,互相独立,可分别交付。
+
+## 背景
+权益评分的 config 槽位齐全,但两处长期欠账:
+1. **净值非真复权**(v0.2 头号待办):`data_akshare.fund_nav` 用"累计净值"(分红简单加回),不是分红再投资复权 → 高分红基金的收益被系统性低估,影响 A/B 维所有收益类指标。代码注释已标 `TODO v0.2`。
+2. **E1 费率无数据**:`config.INDICATORS["E_operation"]["total_fee"]` 槽位在,但 cdim/meta 没提供 `total_fee` → E 维目前实际只有 E2 换手在起作用,评分降级。
+
+## 任务一:净值真复权(分红再投资)
+- 在 `data_akshare.py` 新增/改造,产出**分红再投资复权净值**:
+  - 取 **单位净值走势**(`ak.fund_open_fund_info_em(code, indicator="单位净值走势")`)+ **分红送配详情**(`indicator="分红送配详情"`,每单位分红与除息日)。
+  - 按"除息日把每份分红按当日单位净值再投资"重构复权净值序列(复权因子累乘法)。无分红记录的基金 = 单位净值即复权净值。
+- **不破坏现有接口**:保留 `fund_nav` 签名;新逻辑可作 `fund_nav_adjusted` 或加参数 `adjusted=True`,并在 `run_monthly.py`/回测取净值处切换为复权净值。**切换范围先确认**:A/B 维、回测都应改用复权净值(口径统一)。
+- **校验**:挑 2-3 只高分红债基/红利基金,对比复权前后年化收益应**上修**且合理;无分红基金两者应几乎一致(差异<0.01%)。写一小段校验输出或测试。
+
+## 任务二:E1 费率
+- 在 `data_akshare.py` 找到费率源(akshare 东财基金费率,如管理费/托管费/销售服务费;或综合费率),产出每只基金的 `total_fee`(年综合费率,小数,如 0.015)。**一次整表/批量取**,不要逐只慢调。
+- 接入:把 `total_fee` 并入 `build_meta_table` 输出(或 `cdim_data.csv`),列名对齐 `config.INDICATORS E_operation total_fee`(方向 -1,越低越好)。缺失留空(评分自动降级)。
+- 校验:打印 total_fee 的非空覆盖率 + 分布(主动权益的管理费多在 0.6%~1.5%),离谱值(>3% 或 =0)排查。
+
+## 验收
+- 净值:复权后高分红基金收益上修、无分红基金不变;`run_monthly`/回测改用复权口径且能跑完。
+- 费率:`total_fee` 进入评分输入,E 维不再只靠换手;覆盖率 + 分布合理。
+- akshare 失败优雅降级,不中断主流程;不改 scoring/config 的权重逻辑(只补数据 + 取数层)。
+- 各加一条轻量校验/测试。
+
+## 交付
+- 本地 commit `[codex] feat(v0.2/v0.3): 净值真复权 + E1费率接入(权益补全一)`(不 push),回写"✅ 已完成"。
+- 回报附:复权前后 2-3 只对比、total_fee 覆盖率与分布。
+
+## 边界
+- ✅ 只动 data_akshare.py 取数层(+ run_monthly/回测的净值口径切换)+ 校验;整表取数
+- ❌ 不改 scoring.py/config 权重;不逐只慢调;不 push;C2风格/C3 ReturnGap 不在本包(后续波次)
+- 参考:`data_akshare.py` 现有 fund_nav(85-92行 TODO)、`cdim.py`(C/E维并入模式)、`config.INDICATORS`
