@@ -5,12 +5,14 @@ CSV: data/cdim_data.csv, 列:
   fund_code, brinson_ar, brinson_sr, brinson_er, conc_cr5, turnover_rate,
   style_stability, style_switches_2y, rbsa_r2,
   style_large_value/style_large_growth/style_small_value/style_small_growth
-  (来源: getFundBrinsonIndicator / getFundIndustryConcentration / getFundTurnoverRate)
+  return_gap, return_gap_n_periods, holdings_coverage
+  (来源: 且慢 C1/C4/E2 + AKShare RBSA C2/N7 + 半年报/年报全持仓 C3)
 
 派生指标(供 scoring):
   selection_share = sr/er  (C1 选股贡献占比; er<=0 时置 NaN 不参评)
   style_stability          (C2 RBSA滚动权重稳定度, 0-1)
   style_switches_2y        (N7 近2年风格标签切换次数)
+  return_gap               (C3 半年频实际收益-披露持仓不动收益)
   concentration   = cr5    (C4 集中度, U型计分由 scoring 处理)
   turnover        = turnover_rate (E2, 越低越好, 量化标签豁免-待v0.4)
 """
@@ -21,6 +23,8 @@ import pandas as pd
 
 CDIM_CSV = os.path.join("data", "cdim_data.csv")
 RBSA_MIN_R2 = 0.20
+RETURN_GAP_MIN_PERIODS = 2
+RETURN_GAP_MIN_COVERAGE = 0.70
 
 
 def _numeric_column(df: pd.DataFrame, name: str) -> pd.Series:
@@ -49,12 +53,23 @@ def load_cdim(meta_df: pd.DataFrame) -> pd.DataFrame:
         "style_stability", "style_switches_2y", "rbsa_r2",
         "style_large_value", "style_large_growth",
         "style_small_value", "style_small_growth",
+        "return_gap", "return_gap_n_periods", "holdings_coverage",
+        "return_gap_actual_mean", "return_gap_hypothetical_mean",
+        "return_gap_invalid_periods",
     ]
     if "rbsa_r2" in c.columns:
         reliable = pd.to_numeric(c["rbsa_r2"], errors="coerce") >= RBSA_MIN_R2
         for col in ("style_stability", "style_switches_2y"):
             if col in c.columns:
                 c.loc[~reliable, col] = np.nan
+    if "return_gap" in c.columns:
+        periods = _numeric_column(c, "return_gap_n_periods")
+        coverage = _numeric_column(c, "holdings_coverage")
+        return_gap_reliable = (
+            (periods >= RETURN_GAP_MIN_PERIODS)
+            & (coverage >= RETURN_GAP_MIN_COVERAGE)
+        )
+        c.loc[~return_gap_reliable, "return_gap"] = np.nan
     keep = ["fund_code", "selection_share", "concentration", "turnover"]
     keep += [col for col in optional if col in c.columns]
     # data_akshare 会为部分筛选字段预放空占位列；真实 C 维数据应覆盖占位，
@@ -64,6 +79,9 @@ def load_cdim(meta_df: pd.DataFrame) -> pd.DataFrame:
     hit = c["fund_code"].isin(meta_df["fund_code"]).sum()
     style_hit = (out["style_stability"].notna().sum()
                  if "style_stability" in out.columns else 0)
+    gap_hit = (out["return_gap"].notna().sum()
+               if "return_gap" in out.columns else 0)
     print(f"  C/E维补充: 命中 {hit} 只 -> C1/C4/E2; "
-          f"RBSA风格命中 {style_hit} 只 -> C2/N7 生效")
+          f"RBSA风格命中 {style_hit} 只 -> C2/N7; "
+          f"ReturnGap命中 {gap_hit} 只 -> C3 生效")
     return out
