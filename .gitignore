@@ -1,7 +1,11 @@
 # Python
 .venv/
+scripts/.venv/
 __pycache__/
 *.pyc
+.env
+.env.*
+!.env.example
 
 # 数据缓存与输出(可重新生成,不入库)
 scripts/cache/

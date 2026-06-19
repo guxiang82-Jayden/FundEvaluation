@@ -2,6 +2,25 @@
 
 对应设计文档:`01_评估框架v0.1.md` | 数据源结论:`02_数据源试跑记录.md`
 
+## Python 环境
+
+- Python 3.13.2
+- 实际安装位置：`C:\Python313`
+- 当前兼容路径：`D:\python` → `C:\Python313`
+- 项目虚拟环境：`scripts\.venv`
+- 依赖锁：根目录 `requirements-lock.txt`
+- 版本记录：根目录 `python-version.txt`
+
+恢复环境（在项目根目录运行）：
+
+```powershell
+C:\Python313\python.exe -m venv scripts\.venv
+.\scripts\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
+.\scripts\.venv\Scripts\python.exe -m pip check
+```
+
+`.venv`、`.env`、API Key、Token、缓存和大型临时数据不提交 Git。
+
 ## 架构
 
 ```
