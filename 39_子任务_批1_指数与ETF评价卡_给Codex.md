@@ -55,3 +55,5 @@
 - ✅ 新建 scoring_index.py + 映射/指数收益/ETF场内取数 + run_monthly_index + 测试;复用 score_all 引擎
 - ❌ 不改 scoring.score_all/既有 config 权重;不 NL 猜映射;不造假 TE;ETF 不与场外指数合并;指增/量化不在本批;不 push
 - 参考:`38_框架...v0.1` §3、`scoring_bond_index.py`/`build_index_navs.py`(工具型范式 + TE gate)、`data/index_code_ref.csv`(映射诚实范式)、`screening.mark_investability_bond`(可投性前置思路)
+
+✅ 已完成 2026-06-28
