@@ -45,7 +45,7 @@ def test_classify_bond():
     assert out.loc[2, "bond_subgroup"] == "可转债基金"  # 名称含"可转债"优先
     assert "信用债型" in out.loc[0, "bond_strategy_tags"]
     assert "摊余成本法" in out.loc[5, "bond_strategy_tags"]
-    print("  子组/策略标签/置信度 ✓")
+    print("  子组/策略标签/置信度 [OK]")
 
 
 def test_screening_bond():
@@ -60,7 +60,7 @@ def test_screening_bond():
     ch = dict(zip(out["fund_code"], out["channel"]))
     assert ch["B1"] == "standard" and ch["B2"] == "excluded"
     assert ch["B3"] == "excluded" and ch["B4"] == "excluded"
-    print(f"  FN1/FN2/FN4 触发 ✓; 缺列规则自动跳过({len(out.attrs['screening_warnings'])} 条 warning)")
+    print(f"  FN1/FN2/FN4 触发 [OK]; 缺列规则自动跳过({len(out.attrs['screening_warnings'])} 条 warning)")
 
 
 def test_end_to_end():
@@ -120,8 +120,8 @@ def test_end_to_end():
     assert diff > 0, "崩盘基金 B 维未低于均值"
     # 5) Campisi alpha 已落表
     assert scored["campisi_alpha"].notna().any()
-    print(f"  评分 {len(scored)} 只 | 覆盖率 {cov:.0%}(ABCDE)→formal ✓")
-    print(f"  崩盘组 B 维低于均值 {diff:.1f} 分 ✓ | 重点池 {scored['focus_pool'].sum()} 只")
+    print(f"  评分 {len(scored)} 只 | 覆盖率 {cov:.0%}(ABCDE)→formal [OK]")
+    print(f"  崩盘组 B 维低于均值 {diff:.1f} 分 [OK] | 重点池 {scored['focus_pool'].sum()} 只")
     print(f"  综合分范围 [{scored['composite_score'].min():.1f}, {scored['composite_score'].max():.1f}]")
     cols = ["fund_code", "composite_score", "score_A_return", "score_B_risk",
             "score_D_manager", "campisi_alpha"]
@@ -132,4 +132,4 @@ if __name__ == "__main__":
     test_classify_bond()
     test_screening_bond()
     test_end_to_end()
-    print("\n债基固收线端到端测试全部通过 ✅")
+    print("\n债基固收线端到端测试全部通过 [OK]")

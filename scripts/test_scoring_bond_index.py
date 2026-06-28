@@ -31,7 +31,7 @@ def test_split_and_phase_a_degrade():
     assert scored["score_label"].str.startswith("provisional").all()
     assert scored["weight_coverage"].max() < 0.75
     assert not scored["veto"].any()
-    print("  子组拆分正确, tracking缺失时按B/C/E降级并标provisional ✓")
+    print("  子组拆分正确, tracking缺失时按B/C/E降级并标provisional [OK]")
 
 
 def test_fee_and_scale_rank_within_group():
@@ -45,14 +45,14 @@ def test_fee_and_scale_rank_within_group():
     mid_scale = dom.loc[dom["scale_yi"].eq(50)].iloc[0]
     tiny = dom.loc[dom["scale_yi"].eq(1)].iloc[0]
     assert mid_scale["score_C_attribution"] > tiny["score_C_attribution"]
-    print("  低费率成本分更高, 适度/大规模流动性分高于迷你规模 ✓")
+    print("  低费率成本分更高, 适度/大规模流动性分高于迷你规模 [OK]")
 
 
 def test_defer_small_subgroup():
     print("== 子组<5 defer ==")
     df = bi.build_index_metrics(_synth(n_each=4))
     assert bi.score_index(df).empty
-    print("  两个子组各4只 -> defer(空) ✓")
+    print("  两个子组各4只 -> defer(空) [OK]")
 
 
 def test_tracking_error_direction():
@@ -80,7 +80,7 @@ def test_tracking_error_direction():
     worst = scored.loc[scored["tracking_error"].idxmax()]
     assert best["score_A_return"] > worst["score_A_return"]
     assert best["weight_coverage"] >= 0.75
-    print("  跟踪误差小 -> A维更高, A维补齐后覆盖率升为formal区间 ✓")
+    print("  跟踪误差小 -> A维更高, A维补齐后覆盖率升为formal区间 [OK]")
 
 
 def test_index_mainstream_direction():
@@ -91,7 +91,7 @@ def test_index_mainstream_direction():
     high = scored.loc[scored["index_mainstream"].idxmax()]
     low = scored.loc[scored["index_mainstream"].idxmin()]
     assert high["score_D_manager"] > low["score_D_manager"]
-    print("  主流度高 -> D维更高 ✓")
+    print("  主流度高 -> D维更高 [OK]")
 
 
 def test_missing_mapping_stays_provisional():
@@ -104,7 +104,7 @@ def test_missing_mapping_stays_provisional():
     scored = bi.score_index(df)
     assert scored["tracking_error"].isna().all()
     assert scored["score_label"].str.startswith("provisional").all()
-    print("  有基金净值但无指数映射 -> tracking缺失, provisional ✓")
+    print("  有基金净值但无指数映射 -> tracking缺失, provisional [OK]")
 
 
 if __name__ == "__main__":
@@ -114,4 +114,4 @@ if __name__ == "__main__":
     test_tracking_error_direction()
     test_index_mainstream_direction()
     test_missing_mapping_stays_provisional()
-    print("\nBOND_INDEX 工具型记分卡测试全部通过 ✅")
+    print("\nBOND_INDEX 工具型记分卡测试全部通过 [OK]")

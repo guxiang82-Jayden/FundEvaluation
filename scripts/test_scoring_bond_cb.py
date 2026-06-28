@@ -31,7 +31,7 @@ def test_equity_beta_recovery():
     for code, beta in tb.items():
         est = cb.equity_beta(navs[code], eq)
         assert abs(est - beta) < 0.08, (code, est, beta)
-    print("  8 只 beta 估计与真值偏差<0.08 ✓")
+    print("  8 只 beta 估计与真值偏差<0.08 [OK]")
 
 
 def test_score_cb():
@@ -43,7 +43,7 @@ def test_score_cb():
     assert not scored.empty and (scored["scorecard"] == "CB").all()
     assert scored["composite_score"].between(0, 100).all()
     assert "score_C_attribution" in scored and scored["score_C_attribution"].notna().any()
-    print(f"  {len(scored)}只 scorecard=CB, 综合分∈[0,100], C维(beta/转债仓位)生效 ✓")
+    print(f"  {len(scored)}只 scorecard=CB, 综合分∈[0,100], C维(beta/转债仓位)生效 [OK]")
 
 
 def test_defer_small_group():
@@ -51,11 +51,11 @@ def test_defer_small_group():
     df, navs, eq, _ = _synth(n=3)
     df = cb.build_cb_metrics(df, navs, eq)
     assert cb.score_cb(df).empty, "可转债<5只应 defer"
-    print("  3只<5 → defer(空) ✓")
+    print("  3只<5 → defer(空) [OK]")
 
 
 if __name__ == "__main__":
     test_equity_beta_recovery()
     test_score_cb()
     test_defer_small_group()
-    print("\n可转债 CB 记分卡测试全部通过 ✅")
+    print("\n可转债 CB 记分卡测试全部通过 [OK]")

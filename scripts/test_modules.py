@@ -31,7 +31,7 @@ def test_rbsa():
     est = r["weights"].values
     err = np.abs(est - true_w).max()
     assert err < 0.05, (est, true_w)
-    print(f"  权重还原误差 {err:.3f} ✓ (估计: {dict(r['weights'].round(2))}, R²={r['r2']:.3f})")
+    print(f"  权重还原误差 {err:.3f} [OK] (估计: {dict(r['weights'].round(2))}, R^2={r['r2']:.3f})")
     assert r["r2"] > 0.95
 
     # 2. 稳定风格 -> 高稳定度, 0切换
@@ -54,7 +54,7 @@ def test_rbsa():
     # 标签验证
     lbl = rbsa.style_label(r["weights"])
     assert lbl == "large_growth", lbl
-    print(f"  风格标签: {lbl} ✓")
+    print(f"  风格标签: {lbl} [OK]")
 
 
 def test_backtest():
@@ -80,10 +80,10 @@ def test_backtest():
     # 技能持续的世界里, 评分应能选出技能组 -> 平均超额>0, IC>0
     assert res["excess"].mean() > 0, "回测未能识别持续技能(检查评分或窗口)"
     assert res["rank_ic"].mean() > 0.1
-    print(f"  平均超额 {res['excess'].mean():.2%} > 0 ✓, RankIC {res['rank_ic'].mean():.2f} ✓")
+    print(f"  平均超额 {res['excess'].mean():.2%} > 0 [OK], RankIC {res['rank_ic'].mean():.2f} [OK]")
 
 
 if __name__ == "__main__":
     test_rbsa()
     test_backtest()
-    print("\n模块测试全部通过 ✅")
+    print("\n模块测试全部通过 [OK]")

@@ -33,7 +33,7 @@ def test_assign_track():
     })
     out = rmb.assign_track(df)
     assert list(out["track"]) == ["BOND", "BOND1", "PLUS", "PLUS", "CB", "BOND_INDEX"], list(out["track"])
-    print(f"  {list(out['track'])} ✓ (指数固收按fund_type覆盖纯债误判)")
+    print(f"  {list(out['track'])} [OK] (指数固收按fund_type覆盖纯债误判)")
 
 
 def test_score_subgroups_defer():
@@ -52,7 +52,7 @@ def test_score_subgroups_defer():
     assert set(scored["bond_subgroup"]) == {"中长期纯债"}, set(scored["bond_subgroup"])
     assert (scored["scorecard"] == "BOND").all()
     assert "纯债综合" not in set(scored.get("bond_subgroup", []))
-    print(f"  中长期纯债{len(scored)}只评分, 短债3只defer未并入 ✓")
+    print(f"  中长期纯债{len(scored)}只评分, 短债3只defer未并入 [OK]")
 
 
 def test_plus_track():
@@ -66,7 +66,7 @@ def test_plus_track():
     scored = rmb.score_plus_track(df)
     assert (scored["scorecard"] == "BOND_PLUS").all()
     assert "equity_band" in scored.columns
-    print(f"  {len(scored)}只 BOND_PLUS, 档位={sorted(set(scored['equity_band']))} ✓")
+    print(f"  {len(scored)}只 BOND_PLUS, 档位={sorted(set(scored['equity_band']))} [OK]")
 
 
 def test_excel_multi_sheet():
@@ -85,7 +85,7 @@ def test_excel_multi_sheet():
         names = set(openpyxl.load_workbook(out).sheetnames)
     expect = {"纯债主榜", "一级债榜", "固收+榜", "工具型榜", "可转债待评", "工具型待评", "小微观察区", "剔除清单"}
     assert names == expect, names
-    print(f"  sheets={sorted(names)} | counts={counts} ✓")
+    print(f"  sheets={sorted(names)} | counts={counts} [OK]")
 
 
 def test_index_track():
@@ -106,7 +106,7 @@ def test_index_track():
     subs = set(scored["index_subgroup"])
     assert subs == {"指数固收", "QDII债"}, subs  # 两子组各>=5 均评分
     assert scored["score_label"].str.startswith("provisional").all(), scored["score_label"].tolist()
-    print(f"  {len(scored)}只 BOND_INDEX, 子组={sorted(subs)}, Phase A 全 provisional ✓")
+    print(f"  {len(scored)}只 BOND_INDEX, 子组={sorted(subs)}, Phase A 全 provisional [OK]")
 
 
 def test_index_track_phase_b():
@@ -132,7 +132,7 @@ def test_index_track_phase_b():
     assert not scored.empty
     assert scored["tracking_error"].notna().all()
     assert scored["score_label"].eq("formal").all(), scored["score_label"].tolist()
-    print("  映射+指数收益可用 -> tracking_error 生效且 formal ✓")
+    print("  映射+指数收益可用 -> tracking_error 生效且 formal [OK]")
 
 
 def test_investability_warn():
@@ -161,7 +161,7 @@ def test_investability_warn():
                                veto_dim="B_risk", primary_dim="A_return")
     sc0 = scored.set_index("fund_code").loc["000000", "investability_warn"]
     assert bool(sc0) is True, "上游 investability_warn 未透传"
-    print("  状态识别/优雅降级/score_all OR透传 ✓")
+    print("  状态识别/优雅降级/score_all OR透传 [OK]")
 
 
 if __name__ == "__main__":
@@ -172,4 +172,4 @@ if __name__ == "__main__":
     test_index_track_phase_b()
     test_investability_warn()
     test_excel_multi_sheet()
-    print("\n4-Track 测试全部通过 ✅")
+    print("\n4-Track 测试全部通过 [OK]")

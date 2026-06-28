@@ -27,51 +27,51 @@ def test_metrics():
                     index=pd.to_datetime(["2024-01-01", "2024-06-01", "2024-09-01", "2025-06-01"]))
     mdd = metrics.max_drawdown(nav)
     assert abs(mdd - (-0.25)) < 1e-9, mdd
-    print(f"  max_drawdown: {mdd:.4f} ✓ (期望 -0.25)")
+    print(f"  max_drawdown: {mdd:.4f} [OK] (期望 -0.25)")
 
     rec = metrics.recovery_days(nav)
     expected = (pd.Timestamp("2025-06-01") - pd.Timestamp("2024-09-01")).days
     assert rec == expected, (rec, expected)
-    print(f"  recovery_days: {rec} ✓ (期望 {expected})")
+    print(f"  recovery_days: {rec} [OK] (期望 {expected})")
 
     # 2. 年化收益: 2年翻倍 -> ~41.4%
     nav2 = pd.Series([1.0, 2.0], index=pd.to_datetime(["2024-01-01", "2026-01-01"]))
     ann = metrics.annualized_return(nav2)
     assert abs(ann - (2 ** (1 / 2.0016) - 1)) < 0.01, ann
-    print(f"  annualized_return: {ann:.4f} ✓ (期望 ~0.414)")
+    print(f"  annualized_return: {ann:.4f} [OK] (期望 ~0.414)")
 
     # 3. 胜率: 基金恒胜基准
     nav3 = make_nav(days=800, drift=0.001, vol=0.001, seed=1)
     bench = pd.Series(0.0, index=nav3.index)
     wr = metrics.monthly_win_rate(nav3, bench)
     assert wr > 0.95, wr
-    print(f"  monthly_win_rate: {wr:.2f} ✓ (期望 ~1.0)")
+    print(f"  monthly_win_rate: {wr:.2f} [OK] (期望 ~1.0)")
 
     # 4. 窗口截取: 数据不足返回空
     short_nav = make_nav(days=300)
     assert metrics.window_slice(short_nav, 3).empty
     assert not metrics.window_slice(make_nav(days=1300), 3).empty
-    print("  window_slice 数据不足保护 ✓")
+    print("  window_slice 数据不足保护 [OK]")
 
 
 def test_benchmark():
     print("== 基准解析测试 ==")
     parts = bm.parse_benchmark("沪深300指数收益率×45%+中证港股通综合指数收益率×35%+中债总指数收益率×20%")
     assert len(parts) == 3 and abs(sum(w for _, w in parts) - 1.0) < 1e-9, parts
-    print(f"  parse: {parts} ✓")
+    print(f"  parse: {parts} [OK]")
     comps = bm.resolve_components(parts)
-    print(f"  resolve(部分指数未配置, 权重归一): {comps} ✓")
+    print(f"  resolve(部分指数未配置, 权重归一): {comps} [OK]")
     parts2 = bm.parse_benchmark("中证800指数收益率*80%+活期存款利率*20%")
     assert len(parts2) == 2, parts2
-    print(f"  parse 星号兼容: {parts2} ✓")
+    print(f"  parse 星号兼容: {parts2} [OK]")
     # 权重在前 + 全角＋
     p3 = bm.parse_benchmark("85%×中证500指数收益率＋15%×中证全债指数收益率")
     assert abs(dict((n, w) for n, w in p3).get("中证500指数", 0) - 0.85) < 1e-9, p3
-    print(f"  parse 权重在前/全角＋: {p3} ✓")
+    print(f"  parse 权重在前/全角＋: {p3} [OK]")
     # 安全规则: 已映射权重<50% 必须回退(不得用残缺基准)
     c4 = bm.resolve_components(bm.parse_benchmark("80%×不存在的指数+20%×中证全债指数"))
     assert c4 == [], c4
-    print("  resolve 残缺基准回退保护 ✓")
+    print("  resolve 残缺基准回退保护 [OK]")
 
 
 def test_pipeline():
@@ -116,7 +116,7 @@ def test_pipeline():
     assert scored["focus_pool"].sum() == 0, "provisional 评分混入了正式重点池"
     assert scored["candidate_pool"].sum() > 0
     assert abs(scored["weight_coverage"].iloc[0] - 0.55) < 1e-9  # A(0.30)+B(0.25)
-    print("  可信度标识: provisional/候选池/覆盖率 0.55 ✓")
+    print("  可信度标识: provisional/候选池/覆盖率 0.55 [OK]")
     top = scored.sort_values("composite_score", ascending=False).head(3)
     print(f"  评分: 综合分范围 [{scored['composite_score'].min():.1f}, {scored['composite_score'].max():.1f}]")
     print(f"  重点池 {scored['focus_pool'].sum()} 只, 否决 {scored['veto'].sum()} 只, 短板 {scored['shortboard'].sum()} 只")
@@ -127,7 +127,7 @@ def test_pipeline():
     in_std = scored[scored["fund_code"].isin(crash_funds)]
     if len(in_std) >= 2:
         diff = scored["score_B_risk"].mean() - in_std["score_B_risk"].mean()
-        print(f"  崩盘组 B 维低于均值 {diff:.1f} 分 {'✓' if diff > 0 else '✗ 需检查'}")
+        print(f"  崩盘组 B 维低于均值 {diff:.1f} 分 {'[OK]' if diff > 0 else '[FAIL] 需检查'}")
 
 
 def test_primary_missing_and_investability():
@@ -147,10 +147,10 @@ def test_primary_missing_and_investability():
     assert s.loc[5, "primary_missing"], "A维缺未标记"
     assert s.loc[5, "veto"], "A维缺未否决"
     assert not s.loc[5, "focus_pool"] and not s.loc[5, "candidate_pool"], "A维缺仍进池"
-    print("  A维缺失→否决→不进池 ✓")
+    print("  A维缺失→否决→不进池 [OK]")
     # 规模1亿那只(idx3): investability_warn=True, 不进正式focus_pool
     assert s.loc[3, "investability_warn"], "小规模未预警"
-    print("  规模<2亿→可投性预警→挡出正式池 ✓")
+    print("  规模<2亿→可投性预警→挡出正式池 [OK]")
 
 
 def test_cdim_coverage():
@@ -172,7 +172,7 @@ def test_cdim_coverage():
     assert abs(s_ce["weight_coverage"].iloc[0] - 0.85) < 0.01, s_ce["weight_coverage"].iloc[0]
     assert (s_ce["score_label"] == "formal").all(), "C/E补充后未升formal"
     assert s_ce["score_C_attribution"].notna().all() and s_ce["score_E_operation"].notna().all()
-    print(f"  覆盖率: 无C/E {s_no['weight_coverage'].iloc[0]:.0%} → 有C/E {s_ce['weight_coverage'].iloc[0]:.0%} → formal ✓")
+    print(f"  覆盖率: 无C/E {s_no['weight_coverage'].iloc[0]:.0%} → 有C/E {s_ce['weight_coverage'].iloc[0]:.0%} → formal [OK]")
 
     # 全五维(加D: manager_experience + management_load) → 覆盖率应达 100%
     full = dict(withce, manager_experience=[7, 6, 5, 4, 3],
@@ -180,7 +180,7 @@ def test_cdim_coverage():
     s_full = scoring.score_all(pd.DataFrame(full))
     assert abs(s_full["weight_coverage"].iloc[0] - 1.0) < 0.01, s_full["weight_coverage"].iloc[0]
     assert s_full["score_D_manager"].notna().all()
-    print(f"  全五维覆盖率: {s_full['weight_coverage'].iloc[0]:.0%}(A+B+C+D+E)✓")
+    print(f"  全五维覆盖率: {s_full['weight_coverage'].iloc[0]:.0%}(A+B+C+D+E)[OK]")
 
 
 def test_classify_and_group_scoring():
@@ -197,7 +197,7 @@ def test_classify_and_group_scoring():
     assert out.loc[5, "subgroup"] == "行业主题:医药"   # 灵活配置的医药基金也入医药组
     assert out.loc[3, "strategy_tags"] == "量化"
     assert out.loc[1, "backbone"] == "普通股票型"
-    print("  分类与 backbone ✓")
+    print("  分类与 backbone [OK]")
 
     # 组内分位独立性: 同样的指标值, 在弱组里分位应高于在强组里
     g1 = pd.DataFrame({"excess_return_ann_3y": [0.10, 0.08, 0.06, 0.04, 0.02, 0.05],
@@ -209,7 +209,7 @@ def test_classify_and_group_scoring():
     r1 = s1.loc[5, "score_A_return"]
     r2 = s2.loc[0, "score_A_return"]
     assert r2 > r1, (r1, r2)
-    print(f"  组内分位独立性: 同值0.05 弱组{r2:.0f}分 > 强组{r1:.0f}分 ✓")
+    print(f"  组内分位独立性: 同值0.05 弱组{r2:.0f}分 > 强组{r1:.0f}分 [OK]")
 
 
 if __name__ == "__main__":
@@ -219,4 +219,4 @@ if __name__ == "__main__":
     test_classify_and_group_scoring()
     test_primary_missing_and_investability()
     test_cdim_coverage()
-    print("\n全部测试通过 ✅")
+    print("\n全部测试通过 [OK]")

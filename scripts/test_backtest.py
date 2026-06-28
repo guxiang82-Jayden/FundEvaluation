@@ -43,7 +43,7 @@ def test_forward_return():
     # start 之后无数据时返回 nan
     short = nav.loc[nav.index <= start]
     assert pd.isna(bt.forward_return(short, start, months=12)), "无后续数据应返回 nan"
-    print(f"  12个月前瞻收益: {fwd:.2%} ✓")
+    print(f"  12个月前瞻收益: {fwd:.2%} [OK]")
 
 
 def test_anti_lookahead():
@@ -96,7 +96,7 @@ def test_anti_lookahead():
     assert "rank_ic" in result
     assert "ic_A_return" in result or "ic_B_risk" in result, \
         f"缺分维度IC, keys={list(result.keys())}"
-    print(f"  asof={asof}, n={result['n_universe']}, rank_ic={result['rank_ic']:.3f} ✓")
+    print(f"  asof={asof}, n={result['n_universe']}, rank_ic={result['rank_ic']:.3f} [OK]")
 
 
 def test_inception_exclusion():
@@ -124,7 +124,7 @@ def test_inception_exclusion():
     assert result_with["n_universe"] <= result_without["n_universe"], \
         f"排除后数量({result_with['n_universe']}) 应 <= 不排除({result_without['n_universe']})"
     print(f"  有inception_dates: {result_with['n_universe']}只  "
-          f"无: {result_without['n_universe']}只 ✓")
+          f"无: {result_without['n_universe']}只 [OK]")
 
 
 def test_dim_ic_structure():
@@ -142,7 +142,7 @@ def test_dim_ic_structure():
     window_keys = [k for k in result if "_3y" in k or "_5y" in k]
     assert len(window_keys) > 0, "缺窗口级 IC"
     print(f"  维度IC键: {[k for k in result if k.startswith('ic_')]}")
-    print("  ✓")
+    print("  [OK]")
 
 
 def test_multi_period():
@@ -165,14 +165,14 @@ def test_multi_period():
     assert "mean_ic" in summary.columns
     assert "positive_rate" in summary.columns
     assert len(summary) > 0
-    print(f"  期数: {len(results)}, IC汇总行数: {len(summary)} ✓")
+    print(f"  期数: {len(results)}, IC汇总行数: {len(summary)} [OK]")
 
     suggestions = bt.calibration_suggest(summary)
     assert isinstance(suggestions, dict)
     assert "A_return" in suggestions
     for dim, info in suggestions.items():
         assert "current" in info and "suggested" in info
-    print(f"  calibration_suggest 覆盖维度: {list(suggestions.keys())} ✓")
+    print(f"  calibration_suggest 覆盖维度: {list(suggestions.keys())} [OK]")
 
 
 def test_no_future_data_in_score():
@@ -192,7 +192,7 @@ def test_no_future_data_in_score():
         if key in m_full and key in m_cut and pd.notna(m_full[key]) and pd.notna(m_cut[key]):
             diff = abs(m_full[key] - m_cut[key])
             assert diff < 1e-9, f"{key} 差异 {diff} 超限, 可能有前视"
-    print("  asof 切片一致性 ✓")
+    print("  asof 切片一致性 [OK]")
 
 
 
@@ -272,7 +272,7 @@ def test_within_subgroup_scoring():
     assert "error" not in res, res
     assert res["n_universe"] == 12, res  # 两组各6只均评分
     assert "rank_ic" in res
-    print(f"  组内打分: n={res['n_universe']}, rank_ic={res['rank_ic']:.3f} ✓")
+    print(f"  组内打分: n={res['n_universe']}, rank_ic={res['rank_ic']:.3f} [OK]")
 
 
 if __name__ == "__main__":
@@ -285,4 +285,4 @@ if __name__ == "__main__":
     test_calibration_significance_guard()
     test_load_navs_diag()
     test_within_subgroup_scoring()
-    print("\n全部回测测试通过 ✅")
+    print("\n全部回测测试通过 [OK]")
