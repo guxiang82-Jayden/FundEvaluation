@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 import data_akshare as da
+import scoring_enhanced as se
 import scoring_index as si
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -87,12 +88,15 @@ def classify_universe() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     off = da.merge_share_classes(off)
 
     enhanced_df = funds[types.eq("指数型-股票") & enhanced].copy()
-    enhanced_df["track"] = "INDEX_ENHANCED_PENDING"
+    enhanced_df["track"] = "ENHANCED"
+    enhanced_df = da.merge_share_classes(enhanced_df)
     return off.reset_index(drop=True), etf.reset_index(drop=True), enhanced_df
 
 
-def parse_index_name(name: str) -> dict:
+def parse_index_name(name: str, *, enhanced: bool = False) -> dict:
     text = str(name)
+    if enhanced:
+        text = pd.Series([text]).str.replace(ENHANCED_PATTERN, "", regex=True).iloc[0]
     # 宽基名称后带风格/策略修饰时不是同一个指数，未建权威映射前留空。
     if pd.Series([text]).str.contains(INDEX_VARIANT_PATTERN, regex=True).iloc[0]:
         return {
@@ -123,12 +127,17 @@ def parse_index_name(name: str) -> dict:
 def build_index_map(
     off: pd.DataFrame,
     etf: pd.DataFrame,
+    enhanced: pd.DataFrame | None = None,
     path: str | Path = MAP_PATH,
 ) -> pd.DataFrame:
-    base = pd.concat([off, etf], ignore_index=True, sort=False)
+    frames = [off, etf]
+    if enhanced is not None:
+        frames.append(enhanced)
+    base = pd.concat(frames, ignore_index=True, sort=False)
     rows = []
     for row in base.itertuples(index=False):
-        parsed = parse_index_name(row.fund_name)
+        parsed = parse_index_name(
+            row.fund_name, enhanced=str(row.track) == "ENHANCED")
         rows.append({
             "fund_code": row.fund_code,
             "fund_name": row.fund_name,
@@ -295,4 +304,49 @@ def build_offexchange_metrics(
         rows.append(result)
         if (i + 1) % 20 == 0:
             print(f"  INDEX metrics {i+1}/{len(merged)}")
+    return pd.DataFrame(rows)
+
+
+def build_enhanced_metrics(
+    df: pd.DataFrame,
+    index_returns: dict[str, pd.Series],
+) -> pd.DataFrame:
+    """构造指增超额指标；标的指数缺失时保留空值并诚实降级。"""
+    codes = df["fund_code"].astype(str).tolist()
+    meta = da.build_meta_table(codes)
+    merged = df.merge(
+        meta.drop(columns=["fund_name"], errors="ignore"),
+        on="fund_code", how="left")
+
+    cdim_path = Path(__file__).resolve().parent / "data" / "cdim_data.csv"
+    if cdim_path.exists():
+        cdim = pd.read_csv(cdim_path, dtype={"fund_code": str})
+        cdim["fund_code"] = cdim["fund_code"].str.zfill(6)
+        style_cols = [
+            c for c in (
+                "fund_code", "style_stability", "rbsa_r2", "turnover_rate")
+            if c in cdim.columns]
+        style_data = cdim[style_cols].drop_duplicates(
+            "fund_code", keep="last").rename(columns={"turnover_rate": "turnover"})
+        merged = merged.merge(
+            style_data,
+            on="fund_code", how="left")
+
+    rows = []
+    for i, row in merged.iterrows():
+        result = row.to_dict()
+        idx_ret = index_returns.get(str(row.get("index_code")))
+        if idx_ret is None:
+            result["metric_status"] = "mapping_missing"
+        else:
+            try:
+                nav = da.fund_nav(str(row["fund_code"]))
+                result.update(se.excess_metrics(nav, idx_ret))
+                result["metric_status"] = "ok"
+            except Exception as exc:  # noqa: BLE001
+                result["metric_status"] = "metrics_failed"
+                result["data_error"] = str(exc)
+        rows.append(result)
+        if (i + 1) % 20 == 0:
+            print(f"  ENHANCED metrics {i+1}/{len(merged)}")
     return pd.DataFrame(rows)

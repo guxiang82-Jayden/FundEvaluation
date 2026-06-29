@@ -42,3 +42,5 @@
 - ✅ 新建 scoring_enhanced.py + 扩展标的映射到指增 + 超额指标 + 接 run_monthly_index + 测试;复用 score_all/批1映射/RBSA
 - ❌ 不改 score_all/既有 config 权重;不把 TE 当越小越好(指增非被动);超额口径要标注;不 push;量化(批3)/多资产(批4-6)不在本批
 - 参考:`38_框架v0.1` §4、批1 `scoring_index.py`/`data/index_map_equity.csv`/指数收益取数、`rbsa.py`、`screening` 软标记范式
+
+✅ 已完成 2026-06-28
