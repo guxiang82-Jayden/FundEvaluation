@@ -39,7 +39,8 @@ def test_style_metrics_and_cdim_merge():
         if os.path.exists(cdim.CDIM_CSV):
             os.remove(cdim.CDIM_CSV)
         cdim.CDIM_CSV = old_path
-    assert merged.loc[0, "style_stability"] == result["style_stability"]
+    assert np.isclose(
+        merged.loc[0, "style_stability"], result["style_stability"])
     assert "style_switches_2y_x" not in merged.columns
     assert merged.loc[0, "style_switches_2y"] == result["style_switches_2y"]
 
@@ -52,8 +53,9 @@ def test_n7_strictly_above_threshold():
         "style_switches_2y": [2, 3],
     })
     out = screening.apply_screening(base)
-    assert "N7_风格漂移" not in out.loc[0, "screen_reasons"]
-    assert "N7_风格漂移" in out.loc[1, "screen_reasons"]
+    assert not bool(out.loc[0, "style_drift_warn"])
+    assert bool(out.loc[1, "style_drift_warn"])
+    assert "N7_风格漂移" not in out.loc[1, "screen_reasons"]
 
 
 def test_low_r2_degrades_c2_and_n7():

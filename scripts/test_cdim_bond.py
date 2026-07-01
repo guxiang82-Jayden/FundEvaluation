@@ -1,4 +1,4 @@
-"""cdim_bond 加载层 + C 维生效 测试(用真实 data/cdim_bond_data.csv)。
+"""cdim_bond 加载层 + C 维生效离线测试。
 验证: 接入 C 维后, 债基评分覆盖率从 0.75(ABDE) 升到 1.0(ABCDE) -> formal。
 运行(在 scripts/ 下): python test_cdim_bond.py
 """
@@ -11,9 +11,10 @@ import scoring
 
 
 def test_cdim_bond_loader_and_coverage():
+    import tempfile
+
     print("== cdim_bond 加载 + C 维覆盖率测试 ==")
-    src = pd.read_csv("data/cdim_bond_data.csv", dtype={"fund_code": str})
-    codes = src["fund_code"].str.zfill(6).tolist()
+    codes = [f"{i:06d}" for i in range(10)]
     n = len(codes)
     rng = np.random.default_rng(0)
     # 合成 A/B/D/E(C 来自真实 CSV)
@@ -35,10 +36,26 @@ def test_cdim_bond_loader_and_coverage():
         "valid_3y": True,
     })
 
-    merged = cdim_bond.load_cdim_bond(df)
+    source = pd.DataFrame({
+        "fund_code": codes,
+        "credit_ratio": rng.uniform(0.2, 0.8, n),
+        "dur_sensitive": rng.uniform(1.0, 5.0, n),
+        "leverage_ratio": rng.uniform(1.0, 1.3, n),
+        "neg_alert": False,
+        "cr5_bond": rng.uniform(0.2, 0.6, n),
+        "convertible_ratio": 0.0,
+    })
+    old_path = cdim_bond.CDIM_BOND_CSV
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            cdim_bond.CDIM_BOND_CSV = f"{d}/cdim_bond_data.csv"
+            source.to_csv(cdim_bond.CDIM_BOND_CSV, index=False)
+            merged = cdim_bond.load_cdim_bond(df)
+    finally:
+        cdim_bond.CDIM_BOND_CSV = old_path
     # C 维派生列已并入
     assert "credit_sink" in merged and "duration_dev" in merged and "leverage_contrib" in merged
-    assert merged["credit_sink"].notna().sum() >= n * 0.9, "credit_sink 命中过少"
+    assert merged["credit_sink"].notna().sum() == n
     assert "neg_alert" in merged and "leverage_ratio" in merged, "排雷/杠杆列未直通"
 
     scored = scoring.score_all(

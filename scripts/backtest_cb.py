@@ -27,10 +27,7 @@ import scoring_bond_cb as cb
 
 
 def rank_ic(x: pd.Series, y: pd.Series) -> float:
-    df = pd.DataFrame({"x": x, "y": y}).dropna()
-    if len(df) < 6:
-        return np.nan
-    return float(df["x"].rank().corr(df["y"].rank()))
+    return backtest._rank_ic(x, y)
 
 
 def forward_return(nav: pd.Series, asof: pd.Timestamp, months: int = 12) -> float:

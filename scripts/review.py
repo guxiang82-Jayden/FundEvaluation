@@ -45,9 +45,9 @@ def load_archives(archive_dir: str = "../archive", kind: str = "equity") -> dict
         if not m:
             continue
         try:
-            xl = pd.ExcelFile(f)
-            use = [s for s in board_sheets if s in xl.sheet_names] or [xl.sheet_names[0]]
-            parts = [xl.parse(s, dtype={"fund_code": str}) for s in use]
+            with pd.ExcelFile(f) as xl:
+                use = [s for s in board_sheets if s in xl.sheet_names] or [xl.sheet_names[0]]
+                parts = [xl.parse(s, dtype={"fund_code": str}) for s in use]
             df = pd.concat(parts, ignore_index=True)
             df["fund_code"] = df["fund_code"].astype(str).str.zfill(6)
             df = df.drop_duplicates("fund_code", keep="first")
@@ -64,10 +64,10 @@ def load_excluded(archive_dir: str, kind: str, date: str) -> pd.DataFrame:
     if not files:
         return pd.DataFrame()
     try:
-        xl = pd.ExcelFile(files[0])
-        if "剔除清单" not in xl.sheet_names:
-            return pd.DataFrame()
-        df = xl.parse("剔除清单", dtype={"fund_code": str})
+        with pd.ExcelFile(files[0]) as xl:
+            if "剔除清单" not in xl.sheet_names:
+                return pd.DataFrame()
+            df = xl.parse("剔除清单", dtype={"fund_code": str})
         if "fund_code" in df.columns:
             df["fund_code"] = df["fund_code"].astype(str).str.zfill(6)
         return df
@@ -138,7 +138,10 @@ def rank_ic(prev: pd.DataFrame, fwd: pd.Series, min_n: int = 10) -> dict:
                 "score_C_attribution", "score_D_manager", "score_E_operation"]:
         if col in v and v[col].notna().sum() >= min_n:
             vv = v.dropna(subset=[col])
-            out[col] = float(vv[col].rank().corr(vv["fwd"].rank()))
+            xr, yr = vv[col].rank(), vv["fwd"].rank()
+            out[col] = (
+                float(xr.corr(yr))
+                if xr.nunique() >= 2 and yr.nunique() >= 2 else np.nan)
     return out
 
 

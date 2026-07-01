@@ -91,8 +91,20 @@ def excess_return_ann(nav: pd.Series, bench_ret: pd.Series) -> float:
     aligned = pd.concat([ret, bench_ret], axis=1, join="inner").dropna()
     if len(aligned) < 60:
         return np.nan
-    f_ann = (1 + aligned.iloc[:, 0]).prod() ** (config.TRADING_DAYS_PER_YEAR / len(aligned)) - 1
-    b_ann = (1 + aligned.iloc[:, 1]).prod() ** (config.TRADING_DAYS_PER_YEAR / len(aligned)) - 1
+    def annualize(ret: pd.Series) -> float:
+        values = pd.to_numeric(ret, errors="coerce").dropna()
+        if values.empty or (values <= -1).any():
+            return np.nan
+        log_growth = np.log1p(values).sum()
+        annual_log = log_growth * config.TRADING_DAYS_PER_YEAR / len(values)
+        if not np.isfinite(annual_log) or annual_log > np.log(np.finfo(float).max):
+            return np.nan
+        return float(np.expm1(annual_log))
+
+    f_ann = annualize(aligned.iloc[:, 0])
+    b_ann = annualize(aligned.iloc[:, 1])
+    if pd.isna(f_ann) or pd.isna(b_ann) or b_ann <= -1:
+        return np.nan
     return (1 + f_ann) / (1 + b_ann) - 1
 
 
