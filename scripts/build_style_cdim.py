@@ -69,12 +69,25 @@ def main():
     parser.add_argument("--limit", type=int, default=None, help="调试时限制基金数")
     parser.add_argument("--refresh", action="store_true", help="重算已有 RBSA 数据")
     parser.add_argument("--checkpoint", type=int, default=25, help="每 N 只落盘")
+    parser.add_argument(
+        "--enhanced", action="store_true", help="改为补算指数增强 universe")
+    parser.add_argument("--family", default=None, help="仅补指定指增指数族")
     args = parser.parse_args()
 
     styles = da.style_index_returns()
     print(f"风格指数: {styles.index.min().date()} -> {styles.index.max().date()}, "
           f"{len(styles)} 个共同交易日")
-    universe = da.active_equity_universe()
+    if args.enhanced:
+        import data_index_equity as die
+
+        _, _, universe = die.classify_universe()
+        parsed = universe["fund_name"].map(
+            lambda name: die.parse_index_name(name, enhanced=True))
+        universe["index_family"] = parsed.map(lambda item: item["index_family"])
+        if args.family:
+            universe = universe[universe["index_family"] == args.family]
+    else:
+        universe = da.active_equity_universe()
     if args.limit:
         universe = universe.head(args.limit)
     existing = _load_existing()

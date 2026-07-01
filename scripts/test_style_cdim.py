@@ -84,8 +84,16 @@ def test_low_r2_degrades_c2_and_n7():
     assert "N7_风格漂移" not in screened.loc[0, "screen_reasons"]
 
 
+def test_enhanced_family_parser():
+    import data_index_equity as die
+
+    parsed = die.parse_index_name("中证500量化增强A", enhanced=True)
+    assert parsed["index_family"] == "中证500"
+
+
 if __name__ == "__main__":
     test_style_metrics_and_cdim_merge()
     test_n7_strictly_above_threshold()
     test_low_r2_degrades_c2_and_n7()
+    test_enhanced_family_parser()
     print("style C2/N7 tests passed [OK]")
